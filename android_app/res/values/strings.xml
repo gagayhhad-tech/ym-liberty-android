@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">YM Liberty</string>
+    <string name="notification_channel_name">YM Liberty Плеер</string>
+    <string name="notification_title">YM Liberty</string>
+    <string name="notification_text">Фоновое воспроизведение активно</string>
+</resources>

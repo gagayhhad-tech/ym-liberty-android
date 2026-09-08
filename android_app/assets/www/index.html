@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>YM Liberty</title>
+  
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="favicon.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+  <!-- Dynamic Background Blur -->
+  <div id="dynamic-bg" class="dynamic-bg"></div>
+
+  <!-- Main App Container -->
+  <div id="app-container">
+    
+    <!-- View: My Vibe (Моя Волна) -->
+    <main id="view-vibe" class="view active">
+      <div id="vibe-ambient-wrap" class="vibe-ambient-wrap">
+        <canvas id="vibe-ambient-canvas" class="vibe-ambient-canvas"></canvas>
+      </div>
+
+      <!-- Top Right Search Button (Spotify & Yandex Music style) -->
+      <div class="vibe-top-bar">
+        <button id="btn-vibe-search" class="top-search-btn" aria-label="Поиск" title="Поиск">
+          <i class="bi bi-search"></i>
+        </button>
+      </div>
+      <div class="vibe-container">
+        <div class="vibe-animation">
+          <div class="blob blob1"></div>
+          <div class="blob blob2"></div>
+          <button id="btn-vibe-play" class="vibe-play-btn" aria-label="Воспроизведение">
+            <i class="bi bi-play-fill"></i>
+          </button>
+        </div>
+        <h1 class="vibe-title">Моя Волна</h1>
+        <p class="vibe-subtitle">Музыка, которая вам понравится</p>
+
+        <!-- Wave Mood Chips -->
+        <div class="vibe-mood-chips">
+          <button class="vibe-chip active" data-mood="all"><i class="bi bi-stars"></i> Всё подряд</button>
+          <button class="vibe-chip" data-mood="energy"><i class="bi bi-lightning-charge-fill"></i> Бодрое</button>
+          <button class="vibe-chip" data-mood="calm"><i class="bi bi-moon-stars-fill"></i> Спокойное</button>
+          <button class="vibe-chip" data-mood="happy"><i class="bi bi-emoji-smile-fill"></i> Радостное</button>
+          <button class="vibe-chip" data-mood="discover"><i class="bi bi-compass-fill"></i> Открытия</button>
+        </div>
+
+        <!-- Wave Stats Panel (Оригинальная статистика) -->
+        <div class="vibe-stats-panel">
+          <div class="vibe-stat-card">
+            <div class="stat-icon-wrap"><i class="bi bi-music-note-beamed"></i></div>
+            <div class="stat-content">
+              <span class="stat-value" id="vibe-stat-tracks">0</span>
+              <span class="stat-label">Треков сегодня</span>
+            </div>
+          </div>
+          <div class="vibe-stat-card">
+            <div class="stat-icon-wrap"><i class="bi bi-clock-history"></i></div>
+            <div class="stat-content">
+              <span class="stat-value" id="vibe-stat-time">0 мин</span>
+              <span class="stat-label">В потоке</span>
+            </div>
+          </div>
+          <div class="vibe-stat-card">
+            <div class="stat-icon-wrap"><i class="bi bi-stars"></i></div>
+            <div class="stat-content">
+              <span class="stat-value" id="vibe-stat-mood">Всё подряд</span>
+              <span class="stat-label">Настроение</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Отдельные плашки для общей статистики чуть ниже -->
+        <div class="vibe-total-stats-row">
+          <div class="vibe-total-card">
+            <div class="stat-icon-wrap"><i class="bi bi-collection-play-fill"></i></div>
+            <div class="stat-content">
+              <span class="stat-value" id="vibe-stat-total-tracks">0</span>
+              <span class="stat-label">Треков всего</span>
+            </div>
+          </div>
+          <div class="vibe-total-card">
+            <div class="stat-icon-wrap"><i class="bi bi-hourglass-split"></i></div>
+            <div class="stat-content">
+              <span class="stat-value" id="vibe-stat-total-time">0 мин</span>
+              <span class="stat-label">Минут всего</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Personalized New Releases (Новинки и премьеры) -->
+        <div id="vibe-new-releases" class="vibe-new-releases">
+          <div class="releases-header">
+            <div class="releases-title-group">
+              <h2 class="releases-title">Новинки и премьеры</h2>
+              <span class="releases-subtitle">Свежие треки по вашей коллекции</span>
+            </div>
+            <button id="btn-refresh-releases" class="releases-refresh-btn" aria-label="Обновить новинки" title="Обновить новинки">
+              <i class="bi bi-arrow-clockwise"></i>
+            </button>
+          </div>
+          <div id="vibe-releases-track-list" class="releases-carousel">
+            <!-- Dynamic release cards will be rendered here -->
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- View: Search (Поиск) -->
+    <main id="view-search" class="view">
+      <header class="top-header search-header-row">
+        <button id="btn-close-search" class="icon-btn search-back-btn" aria-label="Назад" title="Назад">
+          <i class="bi bi-arrow-left"></i>
+        </button>
+        <h1>Поиск</h1>
+      </header>
+      <div class="search-container" style="padding: 0 20px;">
+        <div class="search-input-wrapper" style="position:relative;">
+          <i class="bi bi-search" style="position:absolute; left:15px; top:12px; color:var(--text-secondary);"></i>
+          <input type="text" id="search-input" class="search-input" placeholder="Трек, артист, подкаст" style="width:100%; padding:12px 12px 12px 40px; border-radius:12px; border:none; background:rgba(255,255,255,0.1); color:#fff; outline:none; font-size:16px;">
+        </div>
+        <div id="search-results" class="tracks-list" style="margin-top: 20px; padding-bottom: 100px;"></div>
+      </div>
+    </main>
+
+    <!-- View: Library (Коллекция) -->
+    <main id="view-library" class="view">
+      <header class="top-header" style="flex-direction: column; align-items: stretch; gap: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h1>Коллекция</h1>
+          <button id="btn-library-search" class="top-search-btn" aria-label="Поиск" title="Поиск">
+            <i class="bi bi-search"></i>
+          </button>
+        </div>
+        <div class="header-actions" style="margin-top: 5px;">
+          <input type="text" id="library-search-input" placeholder="Поиск в коллекции" style="width:100%; box-sizing: border-box; padding: 8px 12px; border-radius: 8px; border: none; background: rgba(255,255,255,0.1); color: #fff; outline: none;">
+        </div>
+        <div class="segmented-control" style="display: flex; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 4px;">
+          <button id="seg-tracks" class="segment active" style="flex: 1; border: none; background: rgba(255,255,255,0.2); color: #fff; padding: 8px; border-radius: 6px; font-weight: 600;">Треки</button>
+          <button id="seg-playlists" class="segment" style="flex: 1; border: none; background: transparent; color: #aaa; padding: 8px; border-radius: 6px; font-weight: 600;">Плейлисты</button>
+        </div>
+      </header>
+      <div class="library-content">
+        <!-- Tracks View -->
+        <div id="library-tracks-view">
+          <div class="playlist-header">
+          <div class="playlist-cover">
+            <i class="bi bi-heart-fill"></i>
+          </div>
+          <div class="playlist-info">
+            <h2>Мне нравится</h2>
+            <p id="likes-count">0 треков</p>
+          </div>
+          <button id="btn-play-all" class="play-all-btn">
+            <i class="bi bi-play-fill"></i>
+          </button>
+        </div>
+        
+        <div id="tracks-list" class="tracks-list">
+          <!-- Tracks will be injected here -->
+          <div class="empty-state">
+            <i class="bi bi-music-note-beamed"></i>
+            <p>Нет любимых треков</p>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Playlists View -->
+      <div id="library-playlists-view" style="display: none;">
+        <div id="playlists-list" class="tracks-list" style="padding-top: 15px;"></div>
+      </div>
+    </div>
+  </main>
+
+    <!-- View: Settings (Настройки) -->
+    <main id="view-settings" class="view">
+      <header class="top-header">
+        <h1>Настройки</h1>
+      </header>
+      <div class="settings-content">
+        
+        <div class="settings-card account-card">
+          <div class="account-header">
+            <div id="header-avatar" class="avatar">?</div>
+            <div class="account-info">
+              <h3 id="account-name">Не выполнен вход</h3>
+              <p id="account-sub">Нажмите для авторизации</p>
+            </div>
+          </div>
+          <button id="btn-login-modal" class="btn-primary">Авторизоваться</button>
+        </div>
+
+        <div class="settings-section">
+          <h3>Кастомизация</h3>
+          <div class="setting-item">
+            <span>Динамический фон</span>
+            <label class="switch">
+              <input type="checkbox" id="toggle-dynamic-bg" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+          <div class="setting-item">
+            <span>Цвет акцента</span>
+            <div class="color-picker">
+              <button class="color-btn active" style="background: #ffffff;" data-color="#ffffff"></button>
+              <button class="color-btn" style="background: #fed42b;" data-color="#fed42b"></button>
+              <button class="color-btn" style="background: #1db954;" data-color="#1db954"></button>
+              <button class="color-btn" style="background: #ff2d55;" data-color="#ff2d55"></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Звук и качество</h3>
+          <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Качество аудио</span>
+              <span id="audio-quality-label" style="color: var(--text-secondary); font-size: 13px;">320 kbps</span>
+            </div>
+            <select id="setting-audio-quality" class="custom-select">
+              <option value="320">Высокое (320 kbps, MP3)</option>
+              <option value="192">Стандартное (192 kbps, MP3)</option>
+              <option value="128">Экономичное (128 kbps, MP3)</option>
+            </select>
+          </div>
+
+          <!-- Equalizer Card -->
+          <div class="eq-card">
+            <div class="setting-item" style="padding: 0; margin-bottom: 14px;">
+              <div>
+                <span style="font-weight: 600;">Эквалайзер</span>
+                <p style="font-size: 12px; color: var(--text-secondary); margin: 2px 0 0 0;">5-полосный темброблок</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggle-equalizer">
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <div id="eq-controls" class="eq-controls disabled">
+              <div class="eq-preset-row">
+                <span style="font-size: 13px; color: var(--text-secondary);">Пресет:</span>
+                <select id="setting-eq-preset" class="custom-select" style="max-width: 170px;">
+                  <option value="flat">Плоский (Flat)</option>
+                  <option value="bass">Усиление басов</option>
+                  <option value="rock">Рок</option>
+                  <option value="pop">Поп</option>
+                  <option value="electronic">Электроника</option>
+                  <option value="vocal">Вокал</option>
+                  <option value="jazz">Джаз</option>
+                  <option value="custom">Пользовательский</option>
+                </select>
+              </div>
+
+              <div class="eq-sliders-container">
+                <div class="eq-slider-col" data-band="0">
+                  <span class="eq-val" id="eq-val-0">0 dB</span>
+                  <div class="eq-slider-track" id="eq-track-0">
+                    <div class="eq-track-line"></div>
+                    <div class="eq-slider-fill" id="eq-fill-0"></div>
+                    <div class="eq-slider-thumb" id="eq-thumb-0"></div>
+                    <input type="range" class="eq-slider-hidden" id="eq-band-0" min="-12" max="12" step="1" value="0">
+                  </div>
+                  <div class="eq-freq-wrap">
+                    <span class="eq-freq">60 Гц</span>
+                    <span class="eq-freq-sub">Бас</span>
+                  </div>
+                </div>
+                <div class="eq-slider-col" data-band="1">
+                  <span class="eq-val" id="eq-val-1">0 dB</span>
+                  <div class="eq-slider-track" id="eq-track-1">
+                    <div class="eq-track-line"></div>
+                    <div class="eq-slider-fill" id="eq-fill-1"></div>
+                    <div class="eq-slider-thumb" id="eq-thumb-1"></div>
+                    <input type="range" class="eq-slider-hidden" id="eq-band-1" min="-12" max="12" step="1" value="0">
+                  </div>
+                  <div class="eq-freq-wrap">
+                    <span class="eq-freq">230 Гц</span>
+                    <span class="eq-freq-sub">Мид</span>
+                  </div>
+                </div>
+                <div class="eq-slider-col" data-band="2">
+                  <span class="eq-val" id="eq-val-2">0 dB</span>
+                  <div class="eq-slider-track" id="eq-track-2">
+                    <div class="eq-track-line"></div>
+                    <div class="eq-slider-fill" id="eq-fill-2"></div>
+                    <div class="eq-slider-thumb" id="eq-thumb-2"></div>
+                    <input type="range" class="eq-slider-hidden" id="eq-band-2" min="-12" max="12" step="1" value="0">
+                  </div>
+                  <div class="eq-freq-wrap">
+                    <span class="eq-freq">910 Гц</span>
+                    <span class="eq-freq-sub">Вокал</span>
+                  </div>
+                </div>
+                <div class="eq-slider-col" data-band="3">
+                  <span class="eq-val" id="eq-val-3">0 dB</span>
+                  <div class="eq-slider-track" id="eq-track-3">
+                    <div class="eq-track-line"></div>
+                    <div class="eq-slider-fill" id="eq-fill-3"></div>
+                    <div class="eq-slider-thumb" id="eq-thumb-3"></div>
+                    <input type="range" class="eq-slider-hidden" id="eq-band-3" min="-12" max="12" step="1" value="0">
+                  </div>
+                  <div class="eq-freq-wrap">
+                    <span class="eq-freq">3.6 кГц</span>
+                    <span class="eq-freq-sub">Верх</span>
+                  </div>
+                </div>
+                <div class="eq-slider-col" data-band="4">
+                  <span class="eq-val" id="eq-val-4">0 dB</span>
+                  <div class="eq-slider-track" id="eq-track-4">
+                    <div class="eq-track-line"></div>
+                    <div class="eq-slider-fill" id="eq-fill-4"></div>
+                    <div class="eq-slider-thumb" id="eq-thumb-4"></div>
+                    <input type="range" class="eq-slider-hidden" id="eq-band-4" min="-12" max="12" step="1" value="0">
+                  </div>
+                  <div class="eq-freq-wrap">
+                    <span class="eq-freq">14 кГц</span>
+                    <span class="eq-freq-sub">Воздух</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Crossfade Card -->
+          <div class="setting-item crossfade-card" style="flex-direction: column; align-items: stretch; gap: 12px; margin-top: 14px; background: rgba(255, 255, 255, 0.05); border-radius: 14px; padding: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span style="font-weight: 600;">Плавный переход (Кроссфейд)</span>
+                <p style="font-size: 12px; color: var(--text-secondary); margin: 2px 0 0 0;">Бесшовное сведение треков</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggle-crossfade">
+                <span class="slider round"></span>
+              </label>
+            </div>
+            <div id="crossfade-duration-wrap" style="display: none; flex-direction: column; gap: 6px; transition: opacity 0.2s ease;">
+              <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                <span style="color: var(--text-secondary);">Длительность:</span>
+                <span id="crossfade-val" style="font-weight: 600; color: var(--accent-color, #ffd700);">5 сек</span>
+              </div>
+              <input type="range" id="crossfade-slider" min="1" max="12" step="1" value="5" class="crossfade-slider-input" style="width: 100%; accent-color: var(--accent-color, #ffd700); cursor: pointer;">
+              <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-secondary);">
+                <span>1 сек</span>
+                <span>6 сек</span>
+                <span>12 сек</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- View: Settings - About App Section -->
+        <div class="settings-section about-section">
+          <h3>О приложении</h3>
+          <div class="setting-item about-app-item">
+            <div class="about-app-info">
+              <div class="about-app-logo">
+                <img src="favicon.png" alt="YM Liberty" class="about-logo-img">
+              </div>
+              <div class="about-app-text">
+                <div class="about-app-name">YM Liberty</div>
+                <div id="app-version-label" class="about-app-version">v1.0.15 (сборка 16)</div>
+              </div>
+            </div>
+            <button id="btn-check-update" class="btn-check-update" aria-label="Проверить обновления">
+              <i class="bi bi-arrow-repeat"></i>
+              <span>Обновить</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- Mini Player -->
+    <div id="mini-player" class="mini-player hidden">
+      <div class="mini-progress-bar" id="mini-progress"></div>
+      <div class="mini-player-content">
+        <img id="mini-cover" src="favicon.png" alt="Cover" class="mini-cover">
+        <div class="mini-info">
+          <div id="mini-title" class="mini-title">Track Title</div>
+          <div id="mini-artist" class="mini-artist">Artist</div>
+        </div>
+        <div class="mini-controls">
+          <button id="mini-btn-play" class="icon-btn"><i class="bi bi-play-fill"></i></button>
+          <button id="mini-btn-next" class="icon-btn"><i class="bi bi-skip-forward-fill"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Artist Modal -->
+    <main id="view-artist" class="view">
+      <div style="position: sticky; top: 0; z-index: 10; display: flex; padding: 50px 15px 15px;">
+        <button class="icon-btn" id="btn-close-artist" style="background: rgba(0,0,0,0.5); border-radius: 50%;"><i class="bi bi-arrow-left"></i></button>
+      </div>
+      
+      <div id="artist-header-bg" style="height: 350px; background-size: cover; background-position: center; margin-top: -60px; position: relative;">
+        <div style="position: absolute; bottom: 0; left: 0; width: 100%; padding: 20px; background: linear-gradient(transparent, var(--bg-color));">
+          <h1 id="artist-page-name" style="font-size: 36px; margin: 0; font-weight: 800;">Artist</h1>
+        </div>
+      </div>
+      
+      <div style="padding: 20px;">
+        <h2 style="font-size: 20px; margin: 0 0 15px 0;">Альбомы</h2>
+        <div id="artist-albums-list" style="display: flex; overflow-x: auto; gap: 15px; padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); scrollbar-width: none;"></div>
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h2 style="font-size: 20px; margin: 0;">Популярные треки</h2>
+          <button class="play-circle-btn" id="btn-artist-play" style="width: 50px; height: 50px;"><i class="bi bi-play-fill" style="font-size: 24px;"></i></button>
+        </div>
+        <div id="artist-tracks-list" class="tracks-list" style="padding-bottom: 150px;"></div>
+      </div>
+    </main>
+    <!-- View: Album (Отдельная страница альбома) -->
+    <main id="view-album" class="view">
+      <div style="position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 45px 15px 15px; background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);">
+        <button class="icon-btn" id="btn-close-album" style="background: rgba(255,255,255,0.1); border-radius: 50%; width: 40px; height: 40px;"><i class="bi bi-arrow-left"></i></button>
+        <span id="album-header-title" style="font-size: 15px; font-weight: 700; max-width: 60%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.2s;">Альбом</span>
+        <div style="width: 40px;"></div>
+      </div>
+
+      <div style="padding: 16px 20px 24px; display: flex; flex-direction: column; align-items: center; text-align: center;">
+        <img id="album-page-cover" src="favicon.png" style="width: 190px; height: 190px; border-radius: 16px; object-fit: cover; box-shadow: 0 16px 36px rgba(0,0,0,0.6); margin-bottom: 18px;">
+        <h1 id="album-page-name" style="font-size: 24px; margin: 0 0 6px 0; font-weight: 800; line-height: 1.25;">Название альбома</h1>
+        <div id="album-page-artist" style="font-size: 15px; color: var(--accent-color, #fc3f1d); font-weight: 600; cursor: pointer; margin-bottom: 6px;">Исполнитель</div>
+        <div id="album-page-meta" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 18px;">2024 • Альбом</div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <button class="play-circle-btn" id="btn-album-play" style="width: 54px; height: 54px; border-radius: 50%;">
+            <i class="bi bi-play-fill" style="font-size: 26px; margin-left: 2px;"></i>
+          </button>
+        </div>
+      </div>
+
+      <div style="padding: 0 20px 140px;">
+        <div id="album-tracks-list" class="tracks-list"></div>
+      </div>
+    </main>
+
+    <!-- View: Playlist (Отдельная страница плейлиста) -->
+    <main id="view-playlist" class="view">
+      <div style="position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 45px 15px 15px; background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);">
+        <button class="icon-btn" id="btn-close-playlist" style="background: rgba(255,255,255,0.1); border-radius: 50%; width: 40px; height: 40px;"><i class="bi bi-arrow-left"></i></button>
+        <span id="playlist-header-title" style="font-size: 15px; font-weight: 700; max-width: 60%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.2s;">Плейлист</span>
+        <div style="width: 40px;"></div>
+      </div>
+
+      <div style="padding: 16px 20px 24px; display: flex; flex-direction: column; align-items: center; text-align: center;">
+        <img id="playlist-page-cover" src="favicon.png" style="width: 190px; height: 190px; border-radius: 16px; object-fit: cover; box-shadow: 0 16px 36px rgba(0,0,0,0.6); margin-bottom: 18px;">
+        <h1 id="playlist-page-name" style="font-size: 24px; margin: 0 0 8px 0; font-weight: 800;">Playlist</h1>
+        <div style="display: flex; gap: 12px; align-items: center; margin-top: 10px;">
+          <button class="play-circle-btn" id="btn-playlist-play" style="width: 54px; height: 54px; border-radius: 50%;">
+            <i class="bi bi-play-fill" style="font-size: 26px; margin-left: 2px;"></i>
+          </button>
+        </div>
+      </div>
+
+      <div style="padding: 0 20px 140px;">
+        <div id="playlist-tracks-list" class="tracks-list"></div>
+      </div>
+    </main>
+
+    <!-- Bottom Navigation -->
+    <nav id="bottom-nav" class="bottom-nav">
+      <button class="nav-btn active" data-target="view-vibe">
+        <i class="bi bi-broadcast"></i>
+        <span>Волна</span>
+      </button>
+      <button class="nav-btn" data-target="view-library">
+        <i class="bi bi-music-note-list"></i>
+        <span>Коллекция</span>
+      </button>
+      <button class="nav-btn" data-target="view-settings">
+        <i class="bi bi-gear-fill"></i>
+        <span>Настройки</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- Full Screen Player Modal -->
+  <div id="full-player" class="full-player">
+    <!-- Dynamic Ambient Cover Backdrop -->
+    <div id="full-player-bg" class="full-player-bg"></div>
+    <div id="full-player-gradient" class="full-player-gradient"></div>
+
+    <div class="full-player-header">
+      <button id="btn-close-player" class="icon-btn"><i class="bi bi-chevron-down"></i></button>
+      <div class="full-player-context">
+        <span class="context-subtitle" id="full-context-type">ИГРАЕТ ИЗ ВОЛНЫ</span>
+        <span class="context-title" id="full-context-title">Моя Волна</span>
+      </div>
+      <button id="btn-track-menu" class="icon-btn"><i class="bi bi-three-dots"></i></button>
+    </div>
+    
+    <div class="full-cover-container">
+      <img id="full-cover" src="favicon.png" alt="Cover" class="full-cover">
+    </div>
+    
+    <div class="full-info">
+      <div class="full-title-row">
+        <div>
+          <h2 id="full-title">Track Title</h2>
+          <p id="full-artist">Artist</p>
+        </div>
+        <button id="btn-like" class="icon-btn like-btn"><i class="bi bi-heart"></i></button>
+      </div>
+    </div>
+
+    <div class="progress-container">
+      <input type="range" id="progress-slider" value="0" min="0" max="100" step="0.1">
+      <div class="time-row">
+        <span id="time-current">0:00</span>
+        <span id="time-total">0:00</span>
+      </div>
+    </div>
+
+    <div class="full-controls">
+      <button class="icon-btn secondary" id="btn-full-shuffle"><i class="bi bi-shuffle"></i></button>
+      <button class="icon-btn" id="btn-full-prev"><i class="bi bi-skip-backward-fill"></i></button>
+      <button id="btn-full-play" class="play-circle-btn"><i class="bi bi-play-fill"></i></button>
+      <button class="icon-btn" id="btn-full-next"><i class="bi bi-skip-forward-fill"></i></button>
+      <button class="icon-btn secondary" id="btn-full-repeat"><i class="bi bi-repeat"></i></button>
+    </div>
+  </div>
+
+  <!-- Auth Modal (Hidden by default) -->
+  <div id="auth-modal" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+      <div class="modal-header">
+        <h2 style="font-size: 20px; font-weight: bold; margin: 0;">Вход в Яндекс Музыку</h2>
+        <button id="btn-close-auth" class="icon-btn"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="modal-body" style="padding-top: 15px;">
+        <!-- Primary option: Yandex ID Device Flow -->
+        <button id="btn-yandex-login" class="btn-primary" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 14px; font-size: 16px; font-weight: 700; border-radius: 12px; background: #fc3f1d; color: #fff; border: none; cursor: pointer; box-shadow: 0 4px 15px rgba(252,63,29,0.4); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d="M12 24c6.627 0 12-5.373 12-12S18.627 0 12 0 0 5.373 0 12s5.373 12 12 12z" fill="#fc3f1d"/>
+            <path d="M14.7 18.5h-2.3l-3.3-6.2c-.2-.4-.4-.5-.6-.5H8v6.7H6V5.5h4.2c2.7 0 4.1 1.4 4.1 3.8 0 1.9-.9 3-2.3 3.5l3.8 5.7h-1.1zm-4.3-8.2c1.4 0 2.2-.6 2.2-1.9 0-1.2-.8-1.9-2.2-1.9H8v3.8h2.4z" fill="#fff"/>
+          </svg>
+          Войти через Яндекс ID
+        </button>
+
+        <!-- Device code waiting state (hidden initially) -->
+        <div id="device-auth-status" style="display: none; margin-top: 20px; padding: 16px; background: rgba(255,255,255,0.06); border-radius: 12px; border: 1px solid rgba(255,255,255,0.12);">
+          <div id="device-user-code" style="font-size: 28px; font-weight: 900; letter-spacing: 5px; color: #fed42b; margin-bottom: 6px; font-family: monospace; text-shadow: 0 0 10px rgba(254,212,43,0.3); cursor: pointer;" title="Нажмите, чтобы скопировать">--------</div>
+          <div id="code-copied-toast" style="font-size: 12px; color: #00ff88; margin-bottom: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 5px;"><i class="bi bi-clipboard-check-fill"></i> Скопировано в буфер обмена!</div>
+          <a id="device-auth-link" href="#" target="_blank" class="btn-primary" style="display: inline-block; padding: 11px 22px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px; background: #fff; color: #000; box-shadow: 0 4px 12px rgba(255,255,255,0.2);">
+            Открыть ya.ru/device <i class="bi bi-box-arrow-up-right" style="font-size: 12px; margin-left: 5px;"></i>
+          </a>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px; color: #aaa; font-size: 13px;">
+            <div style="width: 14px; height: 14px; border: 2px solid #fed42b; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <span>Ожидаем подтверждения в Яндексе...</span>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; margin: 20px 0 12px 0; color: rgba(255,255,255,0.3); font-size: 12px;">
+          <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.1);"></div>
+          <span style="padding: 0 10px;">или</span>
+          <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.1);"></div>
+        </div>
+
+        <!-- Manual token toggle -->
+        <button id="btn-toggle-manual" style="background: transparent; border: none; color: #888; font-size: 13px; text-decoration: underline; cursor: pointer; padding: 5px;">Другие способы (токен / логин)</button>
+
+        <div id="manual-auth-box" style="display: none; margin-top: 15px; text-align: left;">
+          <div style="margin-bottom: 12px;">
+            <label style="font-size: 12px; color: #888; margin-bottom: 4px; display: block;">Токен Яндекс Музыки:</label>
+            <input type="text" id="input-token" class="form-input" placeholder="y0_AgAAAA..." style="width: 100%; box-sizing: border-box;">
+            <button id="btn-submit-token" class="btn-primary" style="margin-top: 8px; width: 100%; padding: 10px; border-radius: 8px; font-size: 14px;">Войти по токену</button>
+          </div>
+        </div>
+
+        <p id="auth-status" class="status-text" style="margin-top: 14px; font-size: 13px;"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Update Modal -->
+  <div id="update-modal" class="modal-overlay hidden">
+    <div class="modal-content update-modal-card">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="update-icon-badge"><i class="bi bi-arrow-up-circle-fill"></i></div>
+          <div>
+            <h2 style="font-size: 18px; font-weight: bold; margin: 0;">Обновление YM Liberty</h2>
+            <span id="update-version-tag" class="update-version-tag">v1.0.14</span>
+          </div>
+        </div>
+        <button id="btn-close-update-x" class="icon-btn" style="color: var(--text-secondary);"><i class="bi bi-x-lg"></i></button>
+      </div>
+
+      <div class="modal-body" style="padding-top: 10px;">
+        <div class="update-changelog-title">Что нового:</div>
+        <div id="update-changelog-box" class="update-changelog-box">
+          <ul id="update-changelog-list"></ul>
+        </div>
+
+        <!-- Progress bar (shown while downloading) -->
+        <div id="update-progress-container" class="update-progress-container" style="display: none;">
+          <div class="update-progress-bar">
+            <div id="update-progress-fill" class="update-progress-fill"></div>
+          </div>
+          <div class="update-progress-info">
+            <span id="update-progress-label">Загрузка обновления...</span>
+            <span id="update-progress-pct">0%</span>
+          </div>
+        </div>
+
+        <p id="update-status-msg" class="status-text" style="margin-top: 8px; font-size: 13px; min-height: 18px;"></p>
+
+        <div class="update-actions">
+          <button id="btn-update-later" class="btn-secondary">Позже</button>
+          <button id="btn-update-install" class="btn-primary" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <i class="bi bi-download"></i> <span>Обновить</span>
+          </button>
+        </div>
+        <div style="margin-top: 14px; text-align: center;">
+          <a id="link-direct-download" href="https://ym-liberty-bot.vercel.app/YMLiberty.apk" target="_blank" style="color: var(--accent-color, #ffd700); font-size: 13px; text-decoration: underline; font-weight: 500;">
+            <i class="bi bi-box-arrow-up-right"></i> Скачать APK напрямую через браузер
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <!-- Action Sheet Modal (Three Dots) -->
+    <div id="action-sheet" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1000; display: none;">
+      <div id="action-sheet-bg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);"></div>
+      <div id="action-sheet-content" style="position: absolute; bottom: 0; left: 0; width: 100%; background: var(--surface-color, #1e1e1e); border-top-left-radius: 20px; border-top-right-radius: 20px; padding: 20px; box-sizing: border-box; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; align-items: center; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px;">
+          <img id="as-cover" src="favicon.png" style="width: 52px; height: 52px; border-radius: 8px; margin-right: 15px; object-fit: cover;">
+          <div style="overflow: hidden; flex: 1;">
+            <div id="as-title" style="font-weight: bold; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Название</div>
+            <div id="as-artist" style="color: var(--text-secondary); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Артист</div>
+          </div>
+        </div>
+        <div id="as-actions" style="display: flex; flex-direction: column; gap: 8px;">
+          <button class="as-btn" id="as-btn-track-vibe" style="background: transparent; border: none; color: #fff; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-broadcast" style="font-size: 18px; color: var(--accent-color, #fc3f1d);"></i> <span>Моя Волна по треку</span></button>
+          <button class="as-btn" id="as-btn-like" style="background: transparent; border: none; color: #fff; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-heart" style="font-size: 18px;"></i> <span id="as-like-text">Добавить в коллекцию</span></button>
+          <button class="as-btn" id="as-btn-playlist" style="background: transparent; border: none; color: #fff; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-music-note-list" style="font-size: 18px;"></i> <span>Добавить в плейлист</span></button>
+          <button class="as-btn" id="as-btn-share" style="background: transparent; border: none; color: #fff; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-link-45deg" style="font-size: 20px;"></i> <span>Скопировать ссылку</span></button>
+          <button class="as-btn" id="as-btn-artist" style="background: transparent; border: none; color: #fff; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-person" style="font-size: 18px;"></i> <span>Перейти к артисту</span></button>
+          <button class="as-btn" id="as-btn-report" style="background: transparent; border: none; color: #ffb444; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-shield-exclamation" style="font-size: 18px;"></i> <span id="as-report-text">Сообщить о цензуре</span></button>
+        </div>
+        <button id="as-btn-cancel" style="width: 100%; background: rgba(255,255,255,0.08); border: none; color: #fff; padding: 14px; border-radius: 12px; margin-top: 15px; font-weight: bold; cursor: pointer;">Отмена</button>
+      </div>
+    </div>
+
+    <!-- Playlist Chooser Modal -->
+    <div id="playlist-chooser" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1050; display: none;">
+      <div id="playlist-chooser-bg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);"></div>
+      <div id="playlist-chooser-content" style="position: absolute; bottom: 0; left: 0; width: 100%; background: var(--surface-color, #1e1e1e); border-top-left-radius: 20px; border-top-right-radius: 20px; padding: 20px; box-sizing: border-box; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); max-height: 70vh; overflow-y: auto;">
+        <h3 style="margin: 0 0 15px 0; font-size: 18px;">Выберите плейлист</h3>
+        <div id="playlist-chooser-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
+        <button id="playlist-chooser-cancel" style="width: 100%; background: rgba(255,255,255,0.08); border: none; color: #fff; padding: 14px; border-radius: 12px; margin-top: 15px; font-weight: bold; cursor: pointer;">Отмена</button>
+      </div>
+    </div>
+
+    <!-- Global Toast Notification -->
+    <div id="global-toast" class="global-toast hidden">
+      <i class="bi bi-check2-circle"></i>
+      <span id="global-toast-text">Ссылка скопирована</span>
+    </div>
+
+    <audio id="audio-player" preload="auto"></audio>
+    <audio id="audio-player-preload" preload="auto"></audio>
+    <script src="yandex.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

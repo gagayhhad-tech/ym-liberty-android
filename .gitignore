@@ -1,0 +1,53 @@
+# Build outputs & APKs
+*.apk
+*.idsig
+*.jks
+*.keystore
+YMLiberty_unsigned.apk
+YMLiberty.apk
+YMLiberty-*.apk
+YMLiberty.zip
+1786941192_*
+build_unsigned.apk.idsig
+
+# Crash & debug logs
+hs_err_pid*.log
+*.log
+*.tmp
+
+# Temporary reverse engineering & decompile artifacts
+check_apk/
+decoded_res/
+FckCensor/
+final_apks/
+jadx/
+jadx_out/
+linux_build/
+scratch/
+YandexMusicBetaMod/
+YandexMusicBetaMod-master/
+YandexMusicModFork/
+yandex_music_smali/
+yandex_music_src/
+ym-liberty-bot/
+ym-liberty-db/
+android_build/
+HoleverGG.zip
+
+# Build tools & jars
+revanced-cli.jar
+revanced-patches.jar
+DownloadInfoDto.smali
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+node_modules/
+
+# Extra local archives and scripts
+*.zip
+apktool.jar
+uber-apk-signer.jar
+make_*.js
