@@ -51,3 +51,4 @@ node_modules/
 apktool.jar
 uber-apk-signer.jar
 make_*.js
+android_app/build/

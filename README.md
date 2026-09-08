@@ -16,6 +16,7 @@
   <a href="https://developer.android.com/"><img src="https://img.shields.io/badge/Platform-Android_8.0+-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Platform" /></a>
   <img src="https://img.shields.io/badge/Audio-FLAC%20%7C%20320kbps-purple.svg?style=for-the-badge" alt="Audio" />
   <img src="https://img.shields.io/badge/Ads-Free-red.svg?style=for-the-badge" alt="No Ads" />
+  <a href="https://www.tbank.ru/cf/4YjAQJ0qaos"><img src="https://img.shields.io/badge/Donate-%D0%9F%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%B0%D1%82%D1%8C_%D0%B0%D0%B2%D1%82%D0%BE%D1%80%D0%B0-ff69b4.svg?style=for-the-badge&logo=heart" alt="Поддержать автора" /></a>
 </p>
 
 ---
@@ -101,6 +102,19 @@
 - [ym-liberty-android](https://github.com/gagayhhad-tech/ym-liberty-android) — Android-приложение (этот репозиторий).
 - [ym-liberty-db](https://github.com/gagayhhad-tech/ym-liberty-db) — Облачная база оригинальных треков без цензуры.
 - [ym-liberty-bot](https://github.com/gagayhhad-tech/ym-liberty-bot) — Telegram-бот для модерации и загрузки треков в базу.
+
+---
+
+## 💖 Поддержать автора
+
+> **YM Liberty** создаётся и поддерживается бесплатно, с открытым исходным кодом и без какой-либо рекламы. Если вам нравится приложение, вы можете поддержать разработку и сказать автору спасибо на чашку кофе:
+
+| Способ оплаты | Реквизиты / Ссылка |
+| :--- | :--- |
+| 💳 **Т-Банк / СБП** | [**Перевести через Т-Банк**](https://www.tbank.ru/cf/4YjAQJ0qaos) |
+| 💎 **USDT (Сеть TON)** | `UQBfZCbJO25d6JBq6smXu-Oic2kUvlY1kJRkDx7TvB9kwdry` |
+
+*Ваша поддержка очень сильно мотивирует развивать приложение, полировать интерфейс и оперативно выпускать свежие обновления! Большое спасибо!*
 
 ---
 
