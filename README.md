@@ -15,13 +15,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/gagayhhad-tech/ym-liberty-android/releases"><img src="https://img.shields.io/badge/Release-v1.0.15-blue.svg?style=for-the-badge&logo=android" alt="Release v1.0.15" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GNU_GPLv3-green.svg?style=for-the-badge" alt="License GPLv3" /></a>
-  <a href="https://developer.android.com/"><img src="https://img.shields.io/badge/Platform-Android_8.0+-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Platform" /></a>
-  <a href="https://github.com/gagayhhad-tech/YandexMusicLiberty"><img src="https://img.shields.io/badge/Desktop-Windows%20%7C%20Linux-0078D6.svg?style=for-the-badge&logo=windows&logoColor=white" alt="Версия для ПК" /></a>
-  <img src="https://img.shields.io/badge/Audio-FLAC%20%7C%20320kbps-purple.svg?style=for-the-badge" alt="Audio" />
-  <img src="https://img.shields.io/badge/Ads-Free-red.svg?style=for-the-badge" alt="No Ads" />
-  <a href="https://www.tbank.ru/cf/4YjAQJ0qaos"><img src="https://img.shields.io/badge/Donate-%D0%9F%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%B0%D1%82%D1%8C_%D0%B0%D0%B2%D1%82%D0%BE%D1%80%D0%B0-ff69b4.svg?style=for-the-badge&logo=heart" alt="Поддержать автора" /></a>
+  <a href="https://github.com/gagayhhad-tech/ym-liberty-android/releases"><img src="https://img.shields.io/badge/Release-v1.0.15-blue?style=flat-square&logo=android" alt="Release v1.0.15" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GNU_GPLv3-green?style=flat-square" alt="License GPLv3" /></a>
+  <a href="https://developer.android.com/"><img src="https://img.shields.io/badge/Platform-Android_8.0+-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Platform" /></a>
+  <a href="https://github.com/gagayhhad-tech/YandexMusicLiberty"><img src="https://img.shields.io/badge/Desktop-Windows%20%7C%20Linux-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Версия для ПК" /></a>
+  <img src="https://img.shields.io/badge/Audio-FLAC%20%7C%20320kbps-purple?style=flat-square" alt="Audio" />
+  <img src="https://img.shields.io/badge/Ads-Free-red?style=flat-square" alt="No Ads" />
+  <a href="https://www.tbank.ru/cf/4YjAQJ0qaos"><img src="https://img.shields.io/badge/Donate-%D0%9F%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%B0%D1%82%D1%8C_%D0%B0%D0%B2%D1%82%D0%BE%D1%80%D0%B0-ff69b4?style=flat-square&logo=heart" alt="Поддержать автора" /></a>
 </p>
 
 ---
