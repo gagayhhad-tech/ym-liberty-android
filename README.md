@@ -11,9 +11,14 @@
 </p>
 
 <p align="center">
+  💻 <b>Версия для ПК:</b> Ищете клиент для компьютера? Мод для Windows и Linux доступен в репозитории <b><a href="https://github.com/gagayhhad-tech/YandexMusicLiberty">YandexMusicLiberty</a></b>.
+</p>
+
+<p align="center">
   <a href="https://github.com/gagayhhad-tech/ym-liberty-android/releases"><img src="https://img.shields.io/badge/Release-v1.0.15-blue.svg?style=for-the-badge&logo=android" alt="Release v1.0.15" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GNU_GPLv3-green.svg?style=for-the-badge" alt="License GPLv3" /></a>
   <a href="https://developer.android.com/"><img src="https://img.shields.io/badge/Platform-Android_8.0+-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Platform" /></a>
+  <a href="https://github.com/gagayhhad-tech/YandexMusicLiberty"><img src="https://img.shields.io/badge/Desktop-Windows%20%7C%20Linux-0078D6.svg?style=for-the-badge&logo=windows&logoColor=white" alt="Версия для ПК" /></a>
   <img src="https://img.shields.io/badge/Audio-FLAC%20%7C%20320kbps-purple.svg?style=for-the-badge" alt="Audio" />
   <img src="https://img.shields.io/badge/Ads-Free-red.svg?style=for-the-badge" alt="No Ads" />
   <a href="https://www.tbank.ru/cf/4YjAQJ0qaos"><img src="https://img.shields.io/badge/Donate-%D0%9F%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%B0%D1%82%D1%8C_%D0%B0%D0%B2%D1%82%D0%BE%D1%80%D0%B0-ff69b4.svg?style=for-the-badge&logo=heart" alt="Поддержать автора" /></a>
@@ -97,11 +102,16 @@
 
 ---
 
-## 🌐 Экосистема YM Liberty
+## 🌐 Экосистема проектов YM Liberty
 
-- [ym-liberty-android](https://github.com/gagayhhad-tech/ym-liberty-android) — Android-приложение (этот репозиторий).
-- [ym-liberty-db](https://github.com/gagayhhad-tech/ym-liberty-db) — Облачная база оригинальных треков без цензуры.
-- [ym-liberty-bot](https://github.com/gagayhhad-tech/ym-liberty-bot) — Telegram-бот для модерации и загрузки треков в базу.
+Проекты YM Liberty развиваются как единая кроссплатформенная экосистема для комфортного прослушивания музыки без цензуры:
+
+| Продукт | Платформа / Назначение | Ссылка |
+| :--- | :--- | :--- |
+| 💻 **Yandex Music Liberty (PC)** | Десктоп-мод с обходом цензуры (Windows, Linux), Discord RPC и загрузкой треков | [**Репозиторий**](https://github.com/gagayhhad-tech/YandexMusicLiberty) / [Релизы](https://github.com/gagayhhad-tech/YandexMusicLiberty/releases) |
+| 📱 **YM Liberty Android** | Полноценный мобильный клиент для Android с Моей Волной, эквалайзером и шторкой | [**Репозиторий**](https://github.com/gagayhhad-tech/ym-liberty-android) / [Скачать APK](https://github.com/gagayhhad-tech/ym-liberty-android/releases/latest) |
+| ☁️ **YM Liberty DB** | Центральная база оригинальных треков без цензуры (GitHub + Hugging Face) | [**Репозиторий**](https://github.com/gagayhhad-tech/ym-liberty-db) |
+| 🤖 **YM Liberty Bot** | Telegram-бот для автоматической модерации и пополнения базы треков | [**Репозиторий**](https://github.com/gagayhhad-tech/ym-liberty-bot) |
 
 ---
 
