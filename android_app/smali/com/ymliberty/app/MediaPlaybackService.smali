@@ -24,6 +24,8 @@
 
 .field private mWakeLock:Landroid/os/PowerManager$WakeLock;
 
+.field private mIdleHandler:Landroid/os/Handler;
+
 .field private mNoisyReceiver:Lcom/ymliberty/app/NoisyAudioReceiver;
 
 # direct methods
@@ -53,6 +55,153 @@
     iput-wide v1, p0, Lcom/ymliberty/app/MediaPlaybackService;->mPositionMs:J
 
     iput-wide v1, p0, Lcom/ymliberty/app/MediaPlaybackService;->mDurationMs:J
+
+    return-void
+.end method
+
+.method static synthetic access$stopIdle(Lcom/ymliberty/app/MediaPlaybackService;)V
+    .registers 1
+
+    invoke-direct {p0}, Lcom/ymliberty/app/MediaPlaybackService;->stopForegroundAndSelf()V
+
+    return-void
+.end method
+
+.method static synthetic access$isPlaying(Lcom/ymliberty/app/MediaPlaybackService;)Z
+    .registers 2
+
+    iget-boolean v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mIsPlaying:Z
+
+    return v0
+.end method
+
+.method private stopForegroundAndSelf()V
+    .registers 2
+
+    :try_start_0
+    const/4 v0, 0x1
+
+    invoke-virtual {p0, v0}, Landroid/app/Service;->stopForeground(Z)V
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_fg
+
+    :catch_fg
+    :try_start_1
+    invoke-virtual {p0}, Landroid/app/Service;->stopSelf()V
+    :try_end_1
+    .catch Ljava/lang/Throwable; {:try_start_1 .. :try_end_1} :catch_self
+
+    :catch_self
+    return-void
+.end method
+
+.method private scheduleIdleShutdown()V
+    .registers 5
+
+    invoke-direct {p0}, Lcom/ymliberty/app/MediaPlaybackService;->cancelIdleShutdown()V
+
+    new-instance v0, Landroid/os/Handler;
+
+    invoke-static {}, Landroid/os/Looper;->getMainLooper()Landroid/os/Looper;
+
+    move-result-object v1
+
+    invoke-direct {v0, v1}, Landroid/os/Handler;-><init>(Landroid/os/Looper;)V
+
+    iput-object v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mIdleHandler:Landroid/os/Handler;
+
+    new-instance v1, Lcom/ymliberty/app/MediaPlaybackService$IdleShutdownRunnable;
+
+    invoke-direct {v1, p0}, Lcom/ymliberty/app/MediaPlaybackService$IdleShutdownRunnable;-><init>(Lcom/ymliberty/app/MediaPlaybackService;)V
+
+    # 5 minutes without playback: release the notification and stop the service
+    # so it does not linger (and hold a wake lock) until the process is killed.
+    const-wide/32 v2, 0x493e0
+
+    invoke-virtual {v0, v1, v2, v3}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
+
+    return-void
+.end method
+
+.method private cancelIdleShutdown()V
+    .registers 3
+
+    iget-object v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mIdleHandler:Landroid/os/Handler;
+
+    if-eqz v0, :cond_exit
+
+    :try_start_0
+    const/4 v1, 0x0
+
+    invoke-virtual {v0, v1}, Landroid/os/Handler;->removeCallbacksAndMessages(Ljava/lang/Object;)V
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+
+    :catch_0
+    const/4 v0, 0x0
+
+    iput-object v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mIdleHandler:Landroid/os/Handler;
+
+    :cond_exit
+    return-void
+.end method
+
+.method private updateWakeLock()V
+    .registers 3
+
+    :try_start_0
+    iget-object v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mWakeLock:Landroid/os/PowerManager$WakeLock;
+
+    if-nez v0, :cond_check
+
+    invoke-direct {p0}, Lcom/ymliberty/app/MediaPlaybackService;->resetIdleTimerOnly()V
+
+    return-void
+
+    :cond_check
+    iget-boolean v1, p0, Lcom/ymliberty/app/MediaPlaybackService;->mIsPlaying:Z
+
+    if-eqz v1, :cond_release
+
+    invoke-virtual {v0}, Landroid/os/PowerManager$WakeLock;->isHeld()Z
+
+    move-result v1
+
+    if-nez v1, :cond_pause_timer
+
+    invoke-virtual {v0}, Landroid/os/PowerManager$WakeLock;->acquire()V
+
+    :cond_pause_timer
+    # Playing: cancel any pending idle shutdown.
+    invoke-direct {p0}, Lcom/ymliberty/app/MediaPlaybackService;->cancelIdleShutdown()V
+
+    goto :cond_exit
+
+    :cond_release
+    invoke-virtual {v0}, Landroid/os/PowerManager$WakeLock;->isHeld()Z
+
+    move-result v1
+
+    if-eqz v1, :cond_schedule
+    :try_start_1
+    invoke-virtual {v0}, Landroid/os/PowerManager$WakeLock;->release()V
+    :try_end_1
+    .catch Ljava/lang/Throwable; {:try_start_1 .. :try_end_1} :catch_inner
+
+    :catch_inner
+    :cond_schedule
+    # Paused: arm the idle shutdown so the service does not live forever.
+    invoke-direct {p0}, Lcom/ymliberty/app/MediaPlaybackService;->scheduleIdleShutdown()V
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+
+    :catch_0
+    :cond_exit
+    return-void
+.end method
+
+.method private resetIdleTimerOnly()V
+    .registers 1
 
     return-void
 .end method
@@ -161,6 +310,11 @@
 
 .method private updateNotification()V
     .locals 12
+
+    # Battery: the wake lock used to be acquired in onCreate and released only in
+    # onDestroy, so it stayed held for the entire process lifetime after the very
+    # first playback. Tie it to the actual playback state instead.
+    invoke-direct {p0}, Lcom/ymliberty/app/MediaPlaybackService;->updateWakeLock()V
 
     :try_start_0
     # 1. Update MediaSession
@@ -711,7 +865,7 @@
 .end method
 
 .method public onCreate()V
-    .registers 4
+    .registers 5
 
     invoke-super {p0}, Landroid/app/Service;->onCreate()V
 
@@ -740,9 +894,8 @@
 
     iput-object v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mWakeLock:Landroid/os/PowerManager$WakeLock;
 
-    if-eqz v0, :cond_18
-
-    invoke-virtual {v0}, Landroid/os/PowerManager$WakeLock;->acquire()V
+    # The lock is intentionally NOT acquired here. updateWakeLock() acquires it
+    # only while audio is actually playing.
     :try_end_0
     .catch Ljava/lang/Exception; {:try_start_0 .. :try_end_0} :catch_0
 
@@ -794,6 +947,26 @@
 
     invoke-virtual {v0, v1}, Landroid/media/session/MediaSession;->setCallback(Landroid/media/session/MediaSession$Callback;)V
 
+    # Tapping the lock-screen / Android Auto artwork used to do nothing.
+    # Point the session at MainActivity so it reopens the app.
+    new-instance v2, Landroid/content/Intent;
+
+    const-class v3, Lcom/ymliberty/app/MainActivity;
+
+    invoke-direct {v2, p0, v3}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
+
+    const/high16 v3, 0x14000000
+
+    invoke-virtual {v2, v3}, Landroid/content/Intent;->setFlags(I)Landroid/content/Intent;
+
+    const/4 v3, 0x0
+
+    invoke-static {p0, v3, v2, v3}, Landroid/app/PendingIntent;->getActivity(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;
+
+    move-result-object v2
+
+    invoke-virtual {v0, v2}, Landroid/media/session/MediaSession;->setSessionActivity(Landroid/app/PendingIntent;)V
+
     const/4 v1, 0x1
 
     invoke-virtual {v0, v1}, Landroid/media/session/MediaSession;->setActive(Z)V
@@ -831,6 +1004,8 @@
 
 .method public onDestroy()V
     .registers 3
+
+    invoke-direct {p0}, Lcom/ymliberty/app/MediaPlaybackService;->cancelIdleShutdown()V
 
     iget-object v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mNoisyReceiver:Lcom/ymliberty/app/NoisyAudioReceiver;
 

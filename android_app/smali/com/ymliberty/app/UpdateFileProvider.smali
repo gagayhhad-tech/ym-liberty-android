@@ -164,7 +164,7 @@
 .end method
 
 .method public delete(Landroid/net/Uri;Ljava/lang/String;[Ljava/lang/String;)I
-    .registers 5
+    .locals 1
 
     const/4 v0, 0x0
 
@@ -172,7 +172,7 @@
 .end method
 
 .method public update(Landroid/net/Uri;Landroid/content/ContentValues;Ljava/lang/String;[Ljava/lang/String;)I
-    .registers 6
+    .locals 1
 
     const/4 v0, 0x0
 

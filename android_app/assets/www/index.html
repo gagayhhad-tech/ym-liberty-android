@@ -96,6 +96,12 @@
           </div>
         </div>
 
+        <!-- Account sync state: warns when the cloud copy of the stats is stale -->
+        <div id="vibe-sync-warning" class="vibe-sync-warning hidden">
+          <i class="bi bi-cloud-slash"></i>
+          <span>Статистика не синхронизируется с аккаунтом — данные сохраняются только на устройстве</span>
+        </div>
+
         <!-- Personalized New Releases (Новинки и премьеры) -->
         <div id="vibe-new-releases" class="vibe-new-releases">
           <div class="releases-header">
@@ -225,10 +231,11 @@
               <span>Качество аудио</span>
               <span id="audio-quality-label" style="color: var(--text-secondary); font-size: 13px;">320 kbps</span>
             </div>
-            <select id="setting-audio-quality" class="custom-select">
+<select id="setting-audio-quality" class="custom-select">
+              <option value="1000">Lossless (FLAC)</option>
               <option value="320">Высокое (320 kbps, MP3)</option>
-              <option value="192">Стандартное (192 kbps, MP3)</option>
-              <option value="128">Экономичное (128 kbps, MP3)</option>
+              <option value="192">Среднее (192 kbps, MP3)</option>
+              <option value="128">Экономное (128 kbps, MP3)</option>
             </select>
           </div>
 

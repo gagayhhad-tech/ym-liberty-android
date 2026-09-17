@@ -79,6 +79,14 @@
     .catch Ljava/lang/Exception; {:try_start_0 .. :try_end_0} :catch_0
 
     :catch_0
+    move-exception v0
+
+    const-string v1, "YMLiberty"
+
+    const-string v2, "Cover download failed"
+
+    invoke-static {v1, v2, v0}, Landroid/util/Log;->w(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I
+
     :cond_exit
     return-void
 .end method

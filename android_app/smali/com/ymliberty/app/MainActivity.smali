@@ -80,9 +80,54 @@
     return-void
 
     :cond_10
+    # This is a single-page app, so canGoBack() is always false. Ask the page
+    # whether it wants to consume the gesture (close player/modal, go back a
+    # view) before letting the Activity finish.
+    invoke-direct {p0}, Lcom/ymliberty/app/MainActivity;->dispatchBackToWebView()Z
+
+    move-result v0
+
+    if-eqz v0, :cond_fallback
+
+    return-void
+
+    :cond_fallback
     invoke-super {p0}, Landroid/app/Activity;->onBackPressed()V
 
     return-void
+.end method
+
+.method private dispatchBackToWebView()Z
+    .registers 5
+
+    iget-object v0, p0, Lcom/ymliberty/app/MainActivity;->mWebView:Landroid/webkit/WebView;
+
+    if-nez v0, :cond_go
+
+    const/4 v0, 0x0
+
+    return v0
+
+    :cond_go
+    :try_start_0
+    const-string v1, "typeof window.handleAndroidBack === \'function\' ? (window.handleAndroidBack() ? \'true\' : \'false\') : \'handled\'"
+
+    new-instance v2, Lcom/ymliberty/app/AndroidBackCallback;
+
+    invoke-direct {v2, p0}, Lcom/ymliberty/app/AndroidBackCallback;-><init>(Landroid/app/Activity;)V
+
+    invoke-virtual {v0, v1, v2}, Landroid/webkit/WebView;->evaluateJavascript(Ljava/lang/String;Landroid/webkit/ValueCallback;)V
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+
+    const/4 v0, 0x1
+
+    return v0
+
+    :catch_0
+    const/4 v0, 0x0
+
+    return v0
 .end method
 
 .method protected onCreate(Landroid/os/Bundle;)V

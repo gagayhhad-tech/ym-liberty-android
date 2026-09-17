@@ -166,11 +166,30 @@ const YandexClient = {
     const options = data.result || [];
     if (!options.length) throw new Error('No download info available');
     const targetBitrate = parseInt(localStorage.getItem('ym_audio_quality') || '320', 10);
-    const mp3Options = options.filter(o => o.codec === 'mp3');
-    const pool = mp3Options.length > 0 ? mp3Options : options;
-    pool.sort((a, b) => {
-      const diffA = Math.abs((a.bitrateInKbps || 0) - targetBitrate);
-      const diffB = Math.abs((b.bitrateInKbps || 0) - targetBitrate);
+
+    // Yandex ships mp3 and flac variants. Pick the best option for the requested
+    // quality without ever ending up with a codec/URL mismatch: the endpoint is
+    // /get-mp3 for lossy and /get-flac for lossless, so the codec decides the URL.
+    const byCodec = (codec) => options.filter(o => o.codec === codec);
+    const mp3Options = byCodec('mp3');
+    const flacOptions = byCodec('flac');
+    const wantsLossless = targetBitrate >= 1000; // UI exposes 320/192/128 plus FLAC
+
+    let pool;
+    if (wantsLossless && flacOptions.length > 0) {
+      pool = flacOptions;
+    } else if (mp3Options.length > 0) {
+      pool = mp3Options;
+    } else if (flacOptions.length > 0) {
+      pool = flacOptions;
+    } else {
+      pool = options;
+    }
+
+    const effectiveTarget = wantsLossless && pool === flacOptions ? 9999 : targetBitrate;
+    pool = pool.slice().sort((a, b) => {
+      const diffA = Math.abs((a.bitrateInKbps || 0) - effectiveTarget);
+      const diffB = Math.abs((b.bitrateInKbps || 0) - effectiveTarget);
       if (diffA !== diffB) return diffA - diffB;
       return (b.bitrateInKbps || 0) - (a.bitrateInKbps || 0);
     });
@@ -194,7 +213,8 @@ const YandexClient = {
     if (!host || !path || !ts || !s) throw new Error('XML parsing failed');
 
     const hash = md5('XGRSTTXRwy' + path.slice(1) + s);
-    const directStreamUrl = `https://${host}/get-mp3/${hash}/${ts}${path}`;
+    const endpoint = selected.codec === 'flac' ? 'get-flac' : 'get-mp3';
+    const directStreamUrl = `https://${host}/${endpoint}/${hash}/${ts}${path}`;
 
     return {
       trackId: idStr,
@@ -305,13 +325,13 @@ const YandexClient = {
     };
   },
 
-  async sendFeedback(type, trackId, batchId, duration, token, station = 'user:onyourwave') {
+  async sendFeedback(type, trackId, batchId, duration, token, station = 'user:onyourwave', trackLengthSeconds) {
     const cleanStation = station || 'user:onyourwave';
     if (isLocal) {
       return fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, batchId, trackId, type, duration, station: cleanStation })
+        body: JSON.stringify({ token, batchId, trackId, type, duration, station: cleanStation, trackLengthSeconds })
       });
     }
 
@@ -319,9 +339,16 @@ const YandexClient = {
       type,
       timestamp: new Date().toISOString(),
       trackId: String(trackId),
-      from: cleanStation.startsWith('track:') ? 'mobile-radio-track' : 'mobile-radio-user-onyourwave',
-      totalPlayedSeconds: duration !== undefined ? duration : 0
+      from: cleanStation.startsWith('track:') ? 'mobile-radio-track' : 'mobile-radio-user-onyourwave'
     };
+    // Rotor expects the position only for events that meaningfully carry one.
+    if (type === 'trackFinished' || type === 'skip') {
+      body.totalPlayedSeconds = duration !== undefined ? duration : 0;
+    }
+    // Without the track length Rotor cannot tell a full listen from a skip.
+    if (type === 'trackFinished' && trackLengthSeconds > 0) {
+      body.trackLengthSeconds = Math.round(trackLengthSeconds);
+    }
     const batchParam = batchId ? `?batch-id=${encodeURIComponent(batchId)}` : '';
     return fetch(`https://api.music.yandex.net/rotor/station/${cleanStation}/feedback${batchParam}`, {
       method: 'POST',

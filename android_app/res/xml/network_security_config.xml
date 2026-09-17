@@ -1,9 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true">
+    <!--
+        Cleartext is disabled by default: the app talks to HTTPS endpoints only
+        (api.music.yandex.net, oauth.yandex.ru, the YM Liberty bot on Vercel and
+        the media CDNs). Allowing it globally previously permitted a network
+        attacker to read or rewrite any traffic.
+    -->
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
-            <certificates src="user" />
         </trust-anchors>
     </base-config>
+
+    <!--
+        Media hosts occasionally redirect to plain http for the audio payload.
+        Only these are allowed to fall back to cleartext.
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">music.yandex.net</domain>
+        <domain includeSubdomains="true">yandex.net</domain>
+        <domain includeSubdomains="true">yandex.ru</domain>
+        <domain includeSubdomains="true">storage.yandex.net</domain>
+    </domain-config>
+
+    <!--
+        The user CA store is intentionally not trusted: combined with a
+        user-installed proxy certificate it would let the OAuth token kept in
+        localStorage be intercepted.
+    -->
 </network-security-config>

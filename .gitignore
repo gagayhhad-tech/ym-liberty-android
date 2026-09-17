@@ -52,3 +52,7 @@ apktool.jar
 uber-apk-signer.jar
 make_*.js
 android_app/build/
+
+# Local credentials (never commit)
+*.local.txt
+

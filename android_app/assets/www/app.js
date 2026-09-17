@@ -7,9 +7,13 @@ window.alert = function(msg) {
   }
 };
 
+// The WebView loads the UI from file:///android_asset/www/index.html, so an
+// absolute "/favicon.png" would resolve to file:///favicon.png and never load.
+// Always reference the bundled asset relatively.
+const PLACEHOLDER_COVER = 'favicon.png';
+
 // --- DOM Elements ---
 const dom = {
-  views: document.querySelectorAll('.view'),
   navBtns: document.querySelectorAll('.nav-btn'),
   
   miniPlayer: document.getElementById('mini-player'),
@@ -75,13 +79,6 @@ playerB.addEventListener('play', ensureAudioContextResumed);
 let activePlayer = playerA;
 let preloadPlayer = playerB;
 
-Object.defineProperty(dom, 'audioPlayer', {
-  get: () => activePlayer,
-  set: (val) => { activePlayer = val; },
-  configurable: true,
-  enumerable: true
-});
-
 // --- State ---
 const state = {
   token: localStorage.getItem('ym_token') || '',
@@ -93,6 +90,8 @@ const state = {
   currentStation: 'user:onyourwave',
   playbackContext: { subtitle: 'ИГРАЕТ ИЗ ВОЛНЫ', title: 'Моя Волна' },
   vibeBatchId: null, // For fetching next vibe tracks
+  vibeBatchByTrack: {}, // trackId -> batchId it was recommended in (correct feedback attribution)
+  isFetchingVibe: false,
   currentTrack: null,
   isPlaying: false
 };
@@ -141,6 +140,7 @@ function navigateToView(targetId) {
     else v.classList.remove('active');
   });
   window.scrollTo(0, 0);
+  if (typeof startAuraLoop === 'function') startAuraLoop();
 }
 
 function navigateBack() {
@@ -154,6 +154,7 @@ function navigateBack() {
   } else {
     document.querySelector('.nav-btn.active')?.click();
   }
+  if (typeof startAuraLoop === 'function') startAuraLoop();
 }
 
 dom.navBtns.forEach(btn => {
@@ -170,6 +171,7 @@ dom.navBtns.forEach(btn => {
         view.classList.remove('active');
       }
     });
+    if (typeof startAuraLoop === 'function') startAuraLoop();
   });
 });
 
@@ -234,11 +236,24 @@ function fallbackCopy(text) {
 }
 
 let toastTimeout = null;
-function showToast(text) {
+function showToast(text, icon, tone) {
   const toast = document.getElementById('global-toast');
   const toastText = document.getElementById('global-toast-text');
   if (!toast) return;
   if (toastText) toastText.textContent = text;
+  // The mark-up hardcoded a green checkmark, so every error toast also claimed
+  // success. Drive both the glyph and its colour from the caller.
+  const iconEl = toast.querySelector('i');
+  if (iconEl) {
+    if (icon) {
+      iconEl.className = `bi ${icon}`;
+    } else {
+      iconEl.className = 'bi bi-check2-circle';
+    }
+    const isError = tone === 'error' ||
+      (typeof icon === 'string' && /exclamation|wifi-off|x-circle|slash|triangle/.test(icon));
+    iconEl.style.color = isError ? '#e63946' : (tone === 'warn' ? '#fed42b' : '#00ff88');
+  }
   toast.classList.remove('hidden');
   if (toastTimeout) clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => {
@@ -380,6 +395,10 @@ async function fetchLibrary(token) {
     if (typeof syncWaveStatsFromAccount === 'function') {
       syncWaveStatsFromAccount();
     }
+    // Keep Rotor's stored mood in sync with what the UI shows.
+    if (typeof reapplySavedVibeMood === 'function') {
+      reapplySavedVibeMood();
+    }
     // Загружаем новинки после авторизации (токен уже есть)
     loadHomeNewReleases(true);
     
@@ -424,9 +443,9 @@ function renderTracks() {
     div.className = 'track-item';
     
     const artist = track.artists || 'Unknown Artist';
-    let coverUrl = track.coverUri || '/favicon.png';
+    let coverUrl = track.coverUri || PLACEHOLDER_COVER;
     if (coverUrl.includes('%%')) coverUrl = `https://${coverUrl.replace('%%', '200x200')}`;
-    if (!coverUrl.startsWith('http') && coverUrl !== '/favicon.png') {
+    if (!coverUrl.startsWith('http') && coverUrl !== PLACEHOLDER_COVER) {
       coverUrl = `https://${coverUrl}`;
     }
     const isExplicit = track.explicit || track.contentWarning === 'explicit';
@@ -435,7 +454,7 @@ function renderTracks() {
     div.innerHTML = `
       <img src="${coverUrl}" loading="lazy" alt="cover">
       <div class="track-info">
-        <div class="track-title"><span class="track-title-text">${track.title}</span>${badgeHtml}</div>
+        <div class="track-title"><span class="track-title-text">${escapeHtml(track.title)}</span>${badgeHtml}</div>
         <div class="track-artist">${artist}</div>
       </div>
       <i class="bi bi-three-dots track-dots" style="color: var(--text-secondary);"></i>
@@ -458,17 +477,22 @@ function renderTracks() {
 
 // --- Player Logic ---
 
-async function sendFeedback(type, trackId, duration) {
-  if (state.queueMode !== 'vibe' || !state.vibeBatchId || !trackId) return;
+async function sendFeedback(type, trackId, duration, trackLengthSeconds) {
+  if (state.queueMode !== 'vibe' || !trackId) return;
+  // Attribute every event to the batch the track was actually recommended in,
+  // not to whichever batch happened to arrive last.
+  const batchId = typeof vibeBatchForTrack === 'function' ? vibeBatchForTrack(trackId) : state.vibeBatchId;
+  if (!batchId) return;
   try {
     const playSec = duration !== undefined ? duration : (Math.floor(activePlayer.currentTime) || 0);
     await YandexClient.sendFeedback(
       type,
       trackId,
-      state.vibeBatchId,
+      batchId,
       playSec,
       state.token,
-      state.currentStation || 'user:onyourwave'
+      state.currentStation || 'user:onyourwave',
+      trackLengthSeconds
     );
   } catch(e) {
     console.error("Feedback error", e);
@@ -542,9 +566,9 @@ async function preloadNextTrack() {
       artist = nextTrack.artists.map(a => a.name || a).join(', ') || 'Unknown';
     }
 
-    let coverUrl = nextTrack.coverUri || nextTrack.cover || '/favicon.png';
+    let coverUrl = nextTrack.coverUri || nextTrack.cover || PLACEHOLDER_COVER;
     if (coverUrl.includes('%%')) coverUrl = `https://${coverUrl.replace('%%', '400x400')}`;
-    if (!coverUrl.startsWith('http') && coverUrl !== '/favicon.png') {
+    if (!coverUrl.startsWith('http') && coverUrl !== PLACEHOLDER_COVER) {
       coverUrl = `https://${coverUrl}`;
     }
     const explicit = nextTrack.explicit || nextTrack.contentWarning === 'explicit';
@@ -553,7 +577,7 @@ async function preloadNextTrack() {
                      nextTrack.track?.artists?.[0]?.id ||
                      (Array.isArray(nextTrack.artists) ? nextTrack.artists[0]?.id : null);
 
-    if (coverUrl && coverUrl !== '/favicon.png') {
+    if (coverUrl && coverUrl !== PLACEHOLDER_COVER) {
       const img = new Image();
       img.src = coverUrl;
     }
@@ -673,6 +697,15 @@ function finishCrossfade(outgoingPlayer, incomingPlayer, nextTrackInfo) {
 
   if (!isCrossfading) return;
 
+  // The outgoing player is silenced before its own 'ended' event can fire, so the
+  // completion must be reported here. Without this, every crossfaded track looked
+  // like a skip to Rotor and the "tracks played" counters never moved.
+  const outgoingTrackInfo = state.queueMode === 'vibe'
+    ? (state.currentTrack || state.queue[state.queueIndex])
+    : null;
+  const outgoingPos = outgoingPlayer.currentTime || 0;
+  const outgoingDur = outgoingPlayer.duration || 0;
+
   try {
     outgoingPlayer.pause();
     outgoingPlayer.currentTime = 0;
@@ -693,6 +726,26 @@ function finishCrossfade(outgoingPlayer, incomingPlayer, nextTrackInfo) {
   preloadedTrack = null;
   preloadPromise = null;
 
+  // Credit the played time of the outgoing track and report completion once.
+  // recordListeningProgress() already accumulated time frame by frame, so only
+  // the tail between the last animation frame and the end may still be missing —
+  // exactly like the 'ended' handler does it. Adding the whole position here
+  // would double-count the entire track.
+  if (outgoingTrackInfo && state.queueMode === 'vibe') {
+    const outDur = outgoingDur || outgoingPos;
+    if (outDur && lastAudioSampleTime !== null && outDur > lastAudioSampleTime) {
+      const remainder = outDur - lastAudioSampleTime;
+      if (remainder > 0 && remainder < 900 && typeof accumulateListeningSeconds === 'function') {
+        accumulateListeningSeconds(remainder);
+      }
+    }
+    lastAudioSampleTime = null;
+    lastAudioCurrentTrackId = null;
+
+    if (typeof recordTrackFinished === 'function') recordTrackFinished();
+    sendFeedback('trackFinished', outgoingTrackInfo.id, Math.floor(outDur || 180), Math.floor(outDur || 0));
+  }
+
   // Advance queue & stats
   if (state.queueMode === 'vibe') {
     state.queueIndex++;
@@ -700,9 +753,7 @@ function finishCrossfade(outgoingPlayer, incomingPlayer, nextTrackInfo) {
       fetchMoreVibeTracks().catch(() => {});
     }
     if (nextTrackInfo) {
-      state.vibeHistory = state.vibeHistory || new Set();
-      state.vibeHistory.add(String(nextTrackInfo.id));
-      if (typeof saveVibeHistory === 'function') saveVibeHistory();
+      vibeHistoryAdd(nextTrackInfo.id);
       sendFeedback('trackStarted', nextTrackInfo.id, 0);
       if (typeof addTrackToCloudSync === 'function') {
         addTrackToCloudSync(nextTrackInfo.id, nextTrackInfo.track?.albums?.[0]?.id || 0);
@@ -742,14 +793,15 @@ async function playNext(isUserSkip = true) {
   lastAudioSampleTime = null;
   lastAudioCurrentTrackId = null;
 
-  if (state.queueMode === 'vibe' && isUserSkip) {
-    sendFeedback('skip', state.queue[state.queueIndex]?.id, Math.floor(activePlayer.currentTime || 0));
-  }
-  
+  // Repeat means we are not really skipping — do not report a false skip to Rotor.
   if (state.isRepeat) {
     activePlayer.currentTime = 0;
     activePlayer.play();
     return;
+  }
+
+  if (state.queueMode === 'vibe' && isUserSkip) {
+    sendFeedback('skip', state.queue[state.queueIndex]?.id, Math.floor(activePlayer.currentTime || 0));
   }
   
   if (state.queueMode === 'vibe') {
@@ -757,11 +809,16 @@ async function playNext(isUserSkip = true) {
     if (state.queueIndex >= state.queue.length) {
       await fetchMoreVibeTracks();
       if (state.queueIndex >= state.queue.length) {
-        // Fallback: fetch a fresh batch directly to ensure continuous playback without repeating track 0
+        // Fallback: fetch a fresh batch directly so continuous playback never
+        // falls back to track 0. Must be deduped too — this is exactly the
+        // moment a naive concat() would loop the queue.
         try {
           const freshData = await YandexClient.getVibe(state.token, null, state.currentStation || 'user:onyourwave');
-          if (freshData && freshData.tracks && freshData.tracks.length > 0) {
-            state.queue = state.queue.concat(freshData.tracks);
+          const existingIds = new Set(state.queue.map(t => String(t.id)));
+          const extra = dedupeVibeBatch(freshData && freshData.tracks, existingIds);
+          if (extra.length > 0) {
+            rememberVibeBatch(extra, freshData && freshData.batchId);
+            state.queue = state.queue.concat(extra);
           }
         } catch(e) {}
       }
@@ -817,22 +874,16 @@ function playQueueTrack(track) {
     artist = track.artists.map(a => a.name).join(', ') || 'Unknown';
   }
   
-  let coverUrl = track.coverUri || '/favicon.png';
+  let coverUrl = track.coverUri || PLACEHOLDER_COVER;
   if (coverUrl.includes('%%')) coverUrl = `https://${coverUrl.replace('%%', '400x400')}`;
-  if (!coverUrl.startsWith('http') && coverUrl !== '/favicon.png') {
+  if (!coverUrl.startsWith('http') && coverUrl !== PLACEHOLDER_COVER) {
     coverUrl = `https://${coverUrl}`;
   }
   
   const explicit = track.explicit || track.contentWarning === 'explicit';
   
   if (state.queueMode === 'vibe') {
-    state.vibeHistory = state.vibeHistory || new Set();
-    state.vibeHistory.add(String(track.id));
-    if (state.vibeHistory.size > 1000) {
-      const iter = state.vibeHistory.values();
-      state.vibeHistory.delete(iter.next().value);
-    }
-    if (typeof saveVibeHistory === 'function') saveVibeHistory();
+    vibeHistoryAdd(track.id);
     sendFeedback('trackStarted', track.id, 0);
     if (typeof addTrackToCloudSync === 'function') {
       addTrackToCloudSync(track.id, track.albums?.[0]?.id || track.albumId || track.track?.albums?.[0]?.id || 0);
@@ -973,7 +1024,7 @@ function syncNativeMedia(title, artist, isPlaying, positionMs, durationMs, cover
       let cover = coverUrl || state.currentTrack?.cover || '';
       if (cover.includes('100x100')) cover = cover.replace('100x100', '400x400');
       if (cover.includes('%%')) cover = cover.replace('%%', '400x400');
-      if (!cover.startsWith('http') && cover && cover !== '/favicon.png') cover = `https://${cover}`;
+      if (!cover.startsWith('http') && cover && cover !== PLACEHOLDER_COVER) cover = `https://${cover}`;
 
       window.AndroidBridge.updateMedia(curTitle, curArtist, playing, posMs, durMs, cover);
     } catch (e) {
@@ -1023,15 +1074,61 @@ window.handleMediaSeek = function(posMs) {
   }
 };
 
+// Native back button (MainActivity.onBackPressed -> evaluateJavascript).
+// Return true when the gesture was consumed by the UI.
+window.handleAndroidBack = function() {
+  try {
+    // 1. Action sheet (three-dots menu) closes first.
+    const actionSheet = document.getElementById('action-sheet');
+    if (actionSheet && actionSheet.style.display !== 'none' && actionSheet.style.display !== '') {
+      if (typeof closeActionSheet === 'function') closeActionSheet();
+      else actionSheet.style.display = 'none';
+      return true;
+    }
+
+    // 2. Update modal, then the auth modal.
+    const updateModal = document.getElementById('update-modal');
+    if (updateModal && !updateModal.classList.contains('hidden')) {
+      updateModal.classList.add('hidden');
+      return true;
+    }
+    const authModal = document.getElementById('auth-modal');
+    if (authModal && !authModal.classList.contains('hidden')) {
+      authModal.classList.add('hidden');
+      return true;
+    }
+
+    // 3. Full-screen player slides back down.
+    const fullPlayer = document.getElementById('full-player');
+    if (fullPlayer && !fullPlayer.classList.contains('translateY-100')) {
+      fullPlayer.classList.add('translateY-100');
+      return true;
+    }
+
+    // 4. Sub-views navigate back through the view history.
+    const activeView = document.querySelector('.view.active');
+    if (activeView && activeView.id !== 'view-vibe' && state.viewHistory && state.viewHistory.length > 0) {
+      navigateBack();
+      return true;
+    }
+
+    // 5. On the main tab: let the system handle it (minimise the app).
+    return false;
+  } catch (e) {
+    console.warn('handleAndroidBack error:', e);
+    return false;
+  }
+};
+
 function updateMediaSession(trackInfo) {
   if (trackInfo) {
     syncNativeMedia(trackInfo.title, trackInfo.artist, state.isPlaying, (activePlayer.currentTime || 0) * 1000, (activePlayer.duration || 0) * 1000, trackInfo.cover);
   }
   if (!('mediaSession' in navigator) || !trackInfo) return;
   try {
-    let coverUrl = trackInfo.cover || '/favicon.png';
+    let coverUrl = trackInfo.cover || PLACEHOLDER_COVER;
     if (coverUrl.includes('100x100')) coverUrl = coverUrl.replace('100x100', '400x400');
-    if (!coverUrl.startsWith('http') && coverUrl !== '/favicon.png') coverUrl = `https://${coverUrl}`;
+    if (!coverUrl.startsWith('http') && coverUrl !== PLACEHOLDER_COVER) coverUrl = `https://${coverUrl}`;
 
     navigator.mediaSession.metadata = new MediaMetadata({
       title: trackInfo.title || 'Unknown Title',
@@ -1068,6 +1165,28 @@ function updateMediaSessionPosition() {
 
 // --- State Persistence (Save & Restore last played track) ---
 let lastSavedStateTime = 0;
+let lastProgressSavedPos = 0;
+
+// Queue entries carry the raw Yandex track payload (`t.track`), which makes the
+// serialised session balloon to hundreds of KB and get re-stringified every
+// 1.5 s. Only the fields playback actually needs are persisted.
+function slimQueueEntry(t) {
+  if (!t) return t;
+  return {
+    id: t.id,
+    title: t.title,
+    version: t.version || '',
+    artists: typeof t.artists === 'string'
+      ? t.artists
+      : (Array.isArray(t.artists) ? t.artists.map(a => (a && a.name) || a).join(', ') : ''),
+    durationMs: t.durationMs || 0,
+    coverUri: t.coverUri || t.cover || '',
+    explicit: !!t.explicit,
+    isLiberty: !!t.isLiberty,
+    albumId: t.albumId || t.albums?.[0]?.id || 0,
+    artistId: t.artistId || t.artists?.[0]?.id || null
+  };
+}
 
 function savePlaybackState(force = false) {
   if (!state.currentTrack || !state.currentTrack.id) return;
@@ -1078,21 +1197,47 @@ function savePlaybackState(force = false) {
   try {
     const activeMood = localStorage.getItem('ym_active_vibe_mood') || (typeof getWaveStats === 'function' ? getWaveStats().mood : null);
     const dataToSave = {
-      track: state.currentTrack,
+      track: slimQueueEntry(state.currentTrack),
       currentTime: activePlayer ? (activePlayer.currentTime || 0) : 0,
       duration: activePlayer ? (activePlayer.duration || 0) : 0,
-      queue: state.queue || [],
+      queue: (state.queue || []).map(slimQueueEntry),
       queueIndex: state.queueIndex || 0,
       queueMode: state.queueMode || 'library',
       currentStation: state.currentStation || 'user:onyourwave',
       playbackContext: state.playbackContext || null,
       vibeMood: activeMood,
+      // Persist batch attribution so feedback keeps working right after a restart.
+      vibeBatchId: state.vibeBatchId || null,
+      vibeBatchByTrack: state.vibeBatchByTrack || {},
       isShuffle: !!state.isShuffle,
       isRepeat: !!state.isRepeat,
       timestamp: now
     };
     localStorage.setItem('ym_last_session', JSON.stringify(dataToSave));
-  } catch (e) {}
+  } catch (e) {
+    // QuotaExceededError used to fail silently, which killed session restore
+    // with no diagnostic. Recover by dropping the queue payload.
+    try {
+      const fallback = {
+        track: slimQueueEntry(state.currentTrack),
+        currentTime: activePlayer ? (activePlayer.currentTime || 0) : 0,
+        duration: activePlayer ? (activePlayer.duration || 0) : 0,
+        queue: [],
+        queueIndex: 0,
+        queueMode: 'library',
+        currentStation: state.currentStation || 'user:onyourwave',
+        playbackContext: state.playbackContext || null,
+        vibeMood: localStorage.getItem('ym_active_vibe_mood') || null,
+        isShuffle: !!state.isShuffle,
+        isRepeat: !!state.isRepeat,
+        timestamp: Date.now()
+      };
+      localStorage.setItem('ym_last_session', JSON.stringify(fallback));
+      console.warn('Session state exceeded storage quota; saved without queue.');
+    } catch (e2) {
+      console.warn('Could not persist playback state:', e2 && e2.message);
+    }
+  }
 }
 
 function restorePlaybackState() {
@@ -1106,6 +1251,10 @@ function restorePlaybackState() {
     state.queueIndex = session.queueIndex || 0;
     state.queueMode = session.queueMode || 'library';
     state.currentStation = session.currentStation || 'user:onyourwave';
+    // Restore Rotor batch attribution so feedback is not silently dropped after
+    // a restart (the gate in sendFeedback needs a batch id).
+    state.vibeBatchId = session.vibeBatchId || null;
+    state.vibeBatchByTrack = session.vibeBatchByTrack || {};
     if (session.playbackContext) {
       state.playbackContext = session.playbackContext;
       updatePlaybackContextHeader(session.playbackContext.subtitle, session.playbackContext.title);
@@ -1172,11 +1321,11 @@ function updateTrackUI(trackInfo) {
   state.currentTrack = trackInfo;
   
   const badgeHtml = trackInfo.isLiberty ? `<span class="liberty-badge"><i class="bi bi-gem"></i></span>` : (trackInfo.explicit ? `<span class="explicit-badge">E</span>` : '');
-  dom.miniTitle.innerHTML = `<span class="track-title-text">${trackInfo.title}</span>${badgeHtml}`;
+  dom.miniTitle.innerHTML = `<span class="track-title-text">${escapeHtml(trackInfo.title)}</span>${badgeHtml}`;
   dom.miniArtist.textContent = trackInfo.artist;
   dom.miniCover.src = trackInfo.cover;
   
-  dom.fullTitle.innerHTML = `<span class="track-title-text">${trackInfo.title}</span>${badgeHtml}`;
+  dom.fullTitle.innerHTML = `<span class="track-title-text">${escapeHtml(trackInfo.title)}</span>${badgeHtml}`;
   dom.fullArtist.textContent = trackInfo.artist;
   
   if (trackInfo.cover.includes('1000x1000')) {
@@ -1200,10 +1349,9 @@ function updateTrackUI(trackInfo) {
     dom.dynamicBg.style.backgroundImage = `url(${trackInfo.cover})`;
   }
   
-  const blobs = document.querySelectorAll('.blob');
-  blobs.forEach(blob => {
-    blob.style.backgroundImage = `url(${trackInfo.cover})`;
-  });
+  // The legacy .blob layers are permanently hidden (app.css: display:none
+  // !important) — the canvas aura replaced them. Setting backgroundImage on two
+  // invisible nodes on every track change was pure dead work.
 
   // Dynamic Full Player Colorful Cover Backdrop
   const fullPlayerBg = document.getElementById('full-player-bg');
@@ -1211,7 +1359,7 @@ function updateTrackUI(trackInfo) {
     let coverHigh = trackInfo.cover;
     if (coverHigh.includes('%%')) coverHigh = coverHigh.replace('%%', '400x400');
     if (coverHigh.includes('100x100')) coverHigh = coverHigh.replace('100x100', '400x400');
-    if (!coverHigh.startsWith('http') && coverHigh && coverHigh !== '/favicon.png') {
+    if (!coverHigh.startsWith('http') && coverHigh && coverHigh !== PLACEHOLDER_COVER) {
       coverHigh = `https://${coverHigh}`;
     }
     fullPlayerBg.style.backgroundImage = `url("${coverHigh}")`;
@@ -1248,7 +1396,7 @@ if (dom.btnLike) {
     if (!state.currentTrack || !state.currentTrack.id || !state.token) return;
     
     const trackId = String(state.currentTrack.id);
-    const isLiked = state.likedTrackIds.has(trackId);
+    const isLiked = state.likedTrackIds ? state.likedTrackIds.has(trackId) : false;
     const action = isLiked ? 'unlike' : 'like';
     
     // Optimistic UI update
@@ -1268,7 +1416,7 @@ if (dom.btnLike) {
         id: trackId,
         title: state.currentTrack.title,
         artists: state.currentTrack.artist,
-        coverUri: state.currentTrack.cover || '/favicon.png',
+        coverUri: state.currentTrack.cover || PLACEHOLDER_COVER,
         explicit: state.currentTrack.explicit,
         isLiberty: state.currentTrack.isLiberty,
         artistId: state.currentTrack.artistId,
@@ -1278,7 +1426,10 @@ if (dom.btnLike) {
     }
     
     try {
-      await YandexClient.like(trackId, action, state.token);
+      const res = await YandexClient.like(trackId, action, state.token);
+      if (res && res.success === false) {
+        throw new Error('Like rejected by API');
+      }
     } catch (e) {
       console.error('Like failed', e);
       // Revert on failure
@@ -1363,7 +1514,7 @@ function bindAudioPlayerEvents(player) {
     if (typeof recordTrackFinished === 'function') recordTrackFinished();
     if (state.queueMode === 'vibe') {
       const durSec = Math.floor(activePlayer.duration || activePlayer.currentTime || 180);
-      sendFeedback('trackFinished', state.queue[state.queueIndex]?.id, durSec);
+      sendFeedback('trackFinished', state.queue[state.queueIndex]?.id, durSec, Math.floor(activePlayer.duration || durSec));
     }
     state.isPlaying = false;
     updatePlayButtons();
@@ -1404,7 +1555,15 @@ function updateProgress() {
     }
     if (typeof recordListeningProgress === 'function') recordListeningProgress();
     updateMediaSessionPosition();
-    savePlaybackState();
+
+    // savePlaybackState() throttles itself to 1.5 s, but calling it from the
+    // animation loop still ran a full JSON.stringify many times per second.
+    // Persist the position once every 5 s instead — that is plenty for session
+    // restore, and the unload/visibility handlers still force an immediate save.
+    if (typeof savePlaybackState === 'function' && current - lastProgressSavedPos >= 5) {
+      lastProgressSavedPos = current;
+      savePlaybackState();
+    }
   }
   requestAnimationFrame(updateProgress);
 }
@@ -1453,6 +1612,75 @@ function saveVibeHistory() {
 
 state.vibeHistory = loadVibeHistory();
 
+// --- Anti-loop deduplication engine ---
+// Rotor is free to recommend a track we already played. We keep a persisted,
+// ordered history and never enqueue anything that is in it, unless the whole
+// candidate batch is already known — then we fall back to the least-recently
+// played candidates so playback never stalls.
+const VIBE_DEDUP_LIMIT = 1000; // how many history ids we consider "recent enough" to avoid
+
+function vibeHistoryAdd(trackId) {
+  if (!trackId) return;
+  state.vibeHistory = state.vibeHistory || new Set();
+  const id = String(trackId);
+  // Re-insert at the tail so the ordering reflects "most recently played".
+  state.vibeHistory.delete(id);
+  state.vibeHistory.add(id);
+  while (state.vibeHistory.size > VIBE_DEDUP_LIMIT) {
+    const iter = state.vibeHistory.values();
+    state.vibeHistory.delete(iter.next().value);
+  }
+  if (typeof saveVibeHistory === 'function') saveVibeHistory();
+}
+
+function vibeIsKnown(trackId) {
+  return !!(state.vibeHistory && state.vibeHistory.has(String(trackId)));
+}
+
+/**
+ * Filter a freshly fetched Rotor batch against everything we must not repeat.
+ * @param {Array} candidates raw normalised tracks from YandexClient.getVibe
+ * @param {Set<string>} extraIds additional ids to exclude (e.g. current queue)
+ * @param {number} lookback how many trailing history entries count as "too recent"
+ */
+function dedupeVibeBatch(candidates, extraIds, lookback = VIBE_DEDUP_LIMIT) {
+  const list = Array.isArray(candidates) ? candidates.filter(t => t && t.id) : [];
+  if (list.length === 0) return [];
+
+  const historyArr = Array.from(state.vibeHistory || []);
+  const recent = new Set(historyArr.slice(-Math.max(lookback, 1)).map(String));
+  const blocked = new Set(recent);
+  if (extraIds) extraIds.forEach(id => blocked.add(String(id)));
+
+  let fresh = list.filter(t => !blocked.has(String(t.id)));
+  if (fresh.length > 0) return fresh;
+
+  // Everything is a repeat. Relax in stages so playback keeps going, but always
+  // prefer the candidates we have not heard for the longest time (they are at
+  // the head of the history array, so a plain order-preserving filter scores best).
+  const older = new Set(historyArr.slice(0, Math.max(0, historyArr.length - lookback)).map(String));
+  fresh = list.filter(t => !older.has(String(t.id)));
+  if (fresh.length > 0) return fresh;
+
+  // Absolute last resort: only avoid the track that is playing right now.
+  return list;
+}
+
+function rememberVibeBatch(tracks, batchId) {
+  if (!batchId) return;
+  state.vibeBatchId = batchId;
+  state.vibeBatchByTrack = state.vibeBatchByTrack || {};
+  (tracks || []).forEach(t => {
+    if (t && t.id) state.vibeBatchByTrack[String(t.id)] = batchId;
+  });
+}
+
+function vibeBatchForTrack(trackId) {
+  const byTrack = state.vibeBatchByTrack || {};
+  if (trackId && byTrack[String(trackId)]) return byTrack[String(trackId)];
+  return state.vibeBatchId || null;
+}
+
 async function startVibe() {
   if (state.queueMode === 'vibe' && (!state.currentStation || state.currentStation === 'user:onyourwave') && state.queue.length > 0 && state.queueIndex < state.queue.length) {
     // If already in standard Vibe mode, just toggle play/pause
@@ -1476,16 +1704,12 @@ async function startVibe() {
     }
     
     let tracks = data.tracks || [];
-    // Only avoid the most recent 30 tracks so we do not exhaust recommendations
-    const recentHistory = new Set(Array.from(state.vibeHistory || []).slice(-30));
-    let freshTracks = tracks.filter(t => !recentHistory.has(String(t.id)));
-    if (freshTracks.length === 0) {
-      freshTracks = tracks;
-    }
+    // Avoid everything already played. Falls back gracefully inside the helper.
+    let freshTracks = dedupeVibeBatch(tracks, null, VIBE_DEDUP_LIMIT);
     
     if (freshTracks.length > 0) {
       state.queueMode = 'vibe';
-      state.vibeBatchId = data.batchId;
+      rememberVibeBatch(freshTracks, data.batchId);
       state.queue = freshTracks;
       state.queueIndex = 0;
       
@@ -1497,6 +1721,11 @@ async function startVibe() {
       setTimeout(() => {
         fetchMoreVibeTracks().catch(() => {});
       }, 1200);
+    } else {
+      // Rotor returned nothing usable (empty batch or shadowban without a hint).
+      // Never leave the button stuck on the spinner.
+      showToast('Волна не вернула треки. Попробуйте ещё раз', 'bi-exclamation-circle');
+      dom.vibePlayBtn.innerHTML = '<i class="bi bi-play-fill"></i>';
     }
   } catch (e) {
     console.error("Vibe start error", e);
@@ -1516,25 +1745,27 @@ async function fetchMoreVibeTracks() {
     let data = await YandexClient.getVibe(state.token, trackForQueue, station);
     
     const existingIds = new Set(state.queue.map(t => String(t.id)));
-    let freshTracks = (data && data.tracks ? data.tracks : []).filter(t => !existingIds.has(String(t.id)));
+    let freshTracks = dedupeVibeBatch(data && data.tracks, existingIds);
     
     // If Rotor returned duplicates, request fresh recommendation batch without queue
     if (freshTracks.length === 0) {
       data = await YandexClient.getVibe(state.token, null, station);
-      freshTracks = (data && data.tracks ? data.tracks : []).filter(t => !existingIds.has(String(t.id)));
+      freshTracks = dedupeVibeBatch(data && data.tracks, existingIds);
     }
 
-    // If still empty, filter against recently played tracks (avoid last 15)
-    if (freshTracks.length === 0 && data && data.tracks && data.tracks.length > 0) {
-      const recentPlayed = new Set(state.queue.slice(Math.max(0, state.queueIndex - 15), state.queueIndex + 1).map(t => String(t.id)));
-      freshTracks = data.tracks.filter(t => !recentPlayed.has(String(t.id)));
+    // If still empty, ask with a seeded queue anchored on an older track
+    if (freshTracks.length === 0) {
+      const anchor = state.queue[Math.max(0, state.queueIndex - 5)];
+      data = await YandexClient.getVibe(state.token, anchor ? anchor.id : null, station);
+      freshTracks = dedupeVibeBatch(data && data.tracks, existingIds);
     }
     
-    if (data && data.batchId) state.vibeBatchId = data.batchId;
-    
     if (freshTracks.length > 0) {
+      rememberVibeBatch(freshTracks, data && data.batchId);
       state.queue = state.queue.concat(freshTracks);
-      // Prune played tracks far in the past to avoid unbounded queue growth
+      // Prune played tracks far in the past to avoid unbounded queue growth.
+      // History (persisted, 1000 entries) is what actually prevents repeats,
+      // so dropping old queue entries here is now safe.
       if (state.queueIndex > 25) {
         const dropCount = state.queueIndex - 10;
         state.queue.splice(0, dropCount);
@@ -1574,11 +1805,12 @@ async function startTrackVibe(seedTrack) {
       showToast('Яндекс вернул пустую Волну');
     }
 
-    state.vibeBatchId = data.batchId || null;
+    state.vibeBatchByTrack = {};
+    rememberVibeBatch([{ id: trackId }], data.batchId);
 
     let coverUrl = seedTrack.coverUri || rawTrack.coverUri || '';
     if (coverUrl.includes('%%')) coverUrl = `https://${coverUrl.replace('%%', '400x400')}`;
-    if (!coverUrl) coverUrl = '/favicon.png';
+    if (!coverUrl) coverUrl = PLACEHOLDER_COVER;
 
     const isExplicit = Boolean(seedTrack.explicit || rawTrack.explicit || rawTrack.contentWarning === 'explicit');
     const isLiberty = Boolean(seedTrack.isLiberty || rawTrack.isLiberty);
@@ -1593,7 +1825,10 @@ async function startTrackVibe(seedTrack) {
       track: rawTrack
     };
 
-    let waveTracks = (data.tracks || []).filter(t => String(t.id) !== trackId);
+    // The seed track is intentionally first, so exclude it before deduping.
+    const excluded = new Set([String(trackId)]);
+    let waveTracks = dedupeVibeBatch(data.tracks, excluded, 100);
+    rememberVibeBatch(waveTracks, data.batchId);
     state.queue = [initialTrack, ...waveTracks];
     state.queueIndex = 0;
 
@@ -1699,9 +1934,9 @@ function renderSearchResults(data) {
       const div = document.createElement('div');
       div.className = 'track-item';
       div.innerHTML = `
-        <img src="${a.coverUri || '/favicon.png'}" alt="cover" style="border-radius: 50%;">
+        <img src="${a.coverUri || PLACEHOLDER_COVER}" alt="cover" style="border-radius: 50%;">
         <div class="track-info">
-          <div class="track-title">${a.name}</div>
+          <div class="track-title">${escapeHtml(a.name)}</div>
           <div class="track-artist">Артист</div>
         </div>
       `;
@@ -1725,20 +1960,23 @@ function renderSearchResults(data) {
       
       const isExplicit = t.explicit || t.contentWarning === 'explicit';
       const badgeHtml = t.isLiberty ? `<span class="liberty-badge"><i class="bi bi-gem"></i></span>` : (isExplicit ? `<span class="explicit-badge">E</span>` : '');
+      // Search results are real tracks too, so expose the context menu.
+      div._trackData = t;
       div.innerHTML = `
-        <img src="${t.coverUri || '/favicon.png'}" loading="lazy" alt="cover">
+        <img src="${t.coverUri || PLACEHOLDER_COVER}" loading="lazy" alt="cover">
         <div class="track-info">
-          <div class="track-title"><span class="track-title-text">${t.title}</span>${badgeHtml}</div>
-          <div class="track-artist">${t.artists}</div>
+          <div class="track-title"><span class="track-title-text">${escapeHtml(t.title)}</span>${badgeHtml}</div>
+          <div class="track-artist">${escapeHtml(t.artists)}</div>
         </div>
-        <i class="bi bi-play-fill" style="color: var(--text-secondary); font-size: 20px;"></i>
+        <i class="bi bi-three-dots track-dots" style="color: var(--text-secondary);"></i>
       `;
       
-      div.addEventListener('click', () => {
+      div.addEventListener('click', (e) => {
+        if (e.target.classList.contains('track-dots') || e.target.closest('.track-dots')) return;
         state.queueMode = 'library';
         state.queue = tracks.map(tr => tr.track);
         state.queueIndex = tracks.findIndex(tr => tr.id === t.id);
-        playTrack(t.id, t.title, t.artists, t.coverUri || '/favicon.png');
+        playTrack(t.id, t.title, t.artists, t.coverUri || PLACEHOLDER_COVER);
       });
       
       searchResults.appendChild(div);
@@ -1800,7 +2038,7 @@ async function openAlbum(id, title, coverUri) {
   navigateToView('view-album');
   albumPageName.textContent = title || 'Альбом';
   if (albumHeaderTitle) albumHeaderTitle.textContent = title || 'Альбом';
-  albumPageCover.src = coverUri || '/favicon.png';
+  albumPageCover.src = coverUri || PLACEHOLDER_COVER;
   if (albumPageArtist) albumPageArtist.textContent = '...';
   if (albumPageMeta) albumPageMeta.textContent = 'Альбом';
   albumTracksList.innerHTML = '<div style="text-align:center; padding: 20px;">Загрузка треков...</div>';
@@ -1843,10 +2081,10 @@ async function openAlbum(id, title, coverUri) {
       const badgeHtml = t.isLiberty ? `<span class="liberty-badge"><i class="bi bi-gem"></i></span>` : (isExplicit ? `<span class="explicit-badge">E</span>` : '');
       div._trackData = t;
       div.innerHTML = `
-        <img src="${t.coverUri || '/favicon.png'}" loading="lazy" alt="cover">
+        <img src="${t.coverUri || PLACEHOLDER_COVER}" loading="lazy" alt="cover">
         <div class="track-info">
-          <div class="track-title"><span class="track-title-text">${t.title}</span>${badgeHtml}</div>
-          <div class="track-artist">${t.artists}</div>
+          <div class="track-title"><span class="track-title-text">${escapeHtml(t.title)}</span>${badgeHtml}</div>
+          <div class="track-artist">${escapeHtml(t.artists)}</div>
         </div>
         <i class="bi bi-three-dots track-dots" style="color: var(--text-secondary);"></i>
       `;
@@ -1900,7 +2138,7 @@ async function openPlaylist(kind, title) {
   navigateToView('view-playlist');
   playlistPageName.textContent = title || 'Плейлист';
   if (playlistHeaderTitle) playlistHeaderTitle.textContent = title || 'Плейлист';
-  playlistPageCover.src = '/favicon.png';
+  playlistPageCover.src = PLACEHOLDER_COVER;
   playlistTracksList.innerHTML = '<div style="text-align:center; padding: 20px;">Загрузка...</div>';
   currentPlaylistTracks = [];
 
@@ -1923,10 +2161,10 @@ async function openPlaylist(kind, title) {
       const isExplicit = t.explicit || t.contentWarning === 'explicit';
       const badgeHtml = t.isLiberty ? `<span class="liberty-badge"><i class="bi bi-gem"></i></span>` : (isExplicit ? `<span class="explicit-badge">E</span>` : '');
       div.innerHTML = `
-        <img src="${t.coverUri || '/favicon.png'}" alt="cover">
+        <img src="${t.coverUri || PLACEHOLDER_COVER}" alt="cover">
         <div class="track-info">
-          <div class="track-title"><span class="track-title-text">${t.title}</span>${badgeHtml}</div>
-          <div class="track-artist">${t.artists}</div>
+          <div class="track-title"><span class="track-title-text">${escapeHtml(t.title)}</span>${badgeHtml}</div>
+          <div class="track-artist">${escapeHtml(t.artists)}</div>
         </div>
         <i class="bi bi-three-dots track-dots" style="color: var(--text-secondary);"></i>
       `;
@@ -2000,8 +2238,8 @@ async function openArtist(id) {
           aDiv.style.cursor = 'pointer';
           aDiv.style.overflow = 'hidden';
           aDiv.innerHTML = `
-            <img src="${al.coverUri || '/favicon.png'}" style="width:120px; height:120px; border-radius:8px; object-fit:cover; margin-bottom:8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.04)'" onmouseout="this.style.transform='scale(1)'">
-            <div style="font-size:12px; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;" title="${al.title}">${al.title}</div>
+            <img src="${al.coverUri || PLACEHOLDER_COVER}" style="width:120px; height:120px; border-radius:8px; object-fit:cover; margin-bottom:8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.04)'" onmouseout="this.style.transform='scale(1)'">
+            <div style="font-size:12px; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;" title="${escapeHtml(al.title)}">${escapeHtml(al.title)}</div>
             <div style="font-size:10px; color:#aaa; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">${al.year || ''}</div>
           `;
           aDiv.onclick = () => openAlbum(al.id, al.title, al.coverUri);
@@ -2017,10 +2255,10 @@ async function openArtist(id) {
       const badgeHtml = t.isLiberty ? `<span class="liberty-badge"><i class="bi bi-gem"></i></span>` : (isExplicit ? `<span class="explicit-badge">E</span>` : '');
       div._trackData = t;
       div.innerHTML = `
-        <img src="${t.coverUri || '/favicon.png'}" alt="cover">
+        <img src="${t.coverUri || PLACEHOLDER_COVER}" alt="cover">
         <div class="track-info">
-          <div class="track-title"><span class="track-title-text">${t.title}</span>${badgeHtml}</div>
-          <div class="track-artist">${t.artists}</div>
+          <div class="track-title"><span class="track-title-text">${escapeHtml(t.title)}</span>${badgeHtml}</div>
+          <div class="track-artist">${escapeHtml(t.artists)}</div>
         </div>
         <i class="bi bi-three-dots track-dots" style="color: var(--text-secondary);"></i>
       `;
@@ -2031,7 +2269,7 @@ async function openArtist(id) {
         updatePlaybackContextHeader('ТРЕКИ АРТИСТА', artistPageName.textContent || 'Артист');
         state.queue = currentArtistTracks.map(tr => ({ ...(tr.track || {}), id: tr.id, title: tr.title, isLiberty: tr.isLiberty, explicit: tr.explicit, artists: tr.artists, coverUri: tr.coverUri }));
         state.queueIndex = i;
-        playTrack(t.id, t.title, t.artists, t.coverUri || '/favicon.png', t.explicit, t.isLiberty);
+        playTrack(t.id, t.title, t.artists, t.coverUri || PLACEHOLDER_COVER, t.explicit, t.isLiberty);
       });
 
       artistTracksList.appendChild(div);
@@ -2051,7 +2289,7 @@ if (btnArtistPlay) {
       state.queue = currentArtistTracks.map(tr => ({ ...(tr.track || {}), id: tr.id, title: tr.title, isLiberty: tr.isLiberty, explicit: tr.explicit, artists: tr.artists, coverUri: tr.coverUri }));
       state.queueIndex = 0;
       const t = currentArtistTracks[0];
-      playTrack(t.id, t.title, t.artists, t.coverUri || '/favicon.png', t.explicit, t.isLiberty);
+      playTrack(t.id, t.title, t.artists, t.coverUri || PLACEHOLDER_COVER, t.explicit, t.isLiberty);
     }
   });
 }
@@ -2108,17 +2346,34 @@ dom.toggleDynamicBg.addEventListener('change', (e) => {
 });
 
 // Color Picker Logic
+const ACCENT_COLOR_KEY = 'ym_accent_color';
+function applyAccentColor(color) {
+  if (!color) return;
+  document.documentElement.style.setProperty('--accent-color', color);
+}
+// Restore the previously chosen accent instead of losing it on every reload.
+(function initAccentColor() {
+  const saved = localStorage.getItem(ACCENT_COLOR_KEY);
+  if (saved) applyAccentColor(saved);
+})();
+
 dom.colorBtns.forEach(btn => {
+  const color = btn.getAttribute('data-color');
+  if (color && color === localStorage.getItem(ACCENT_COLOR_KEY)) {
+    dom.colorBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
   btn.addEventListener('click', () => {
     dom.colorBtns.forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    document.documentElement.style.setProperty('--accent-color', btn.getAttribute('data-color'));
+    const picked = btn.getAttribute('data-color');
+    applyAccentColor(picked);
+    try { localStorage.setItem(ACCENT_COLOR_KEY, picked); } catch (e) {}
   });
 });
 
 // --- Init ---
 dom.fullPlayer.classList.add('translateY-100');
-document.querySelectorAll('.blob').forEach(b => b.style.animationPlayState = 'paused');
 
 // Setup System Media Controls & Restore Last Session
 setupMediaSession();
@@ -2178,7 +2433,7 @@ async function fetchPlaylists() {
         div.innerHTML = `
           <img src="${pl.coverUri}" alt="cover" style="width: 60px; height: 60px; border-radius: 8px;">
           <div class="track-info">
-            <div class="track-title">${pl.title}</div>
+            <div class="track-title">${escapeHtml(pl.title)}</div>
             <div class="track-artist">${pl.trackCount} треков</div>
           </div>
           <i class="bi bi-chevron-right" style="color: var(--text-secondary);"></i>
@@ -2234,10 +2489,10 @@ function openActionSheet(track) {
 
   let coverUrl = track.coverUri || track.cover || track.track?.coverUri || track.track?.cover || track.track?.albums?.[0]?.coverUri || '';
   if (coverUrl.includes('%%')) coverUrl = `https://${coverUrl.replace('%%', '200x200')}`;
-  if (coverUrl && !coverUrl.startsWith('http') && coverUrl !== '/favicon.png') {
+  if (coverUrl && !coverUrl.startsWith('http') && coverUrl !== PLACEHOLDER_COVER) {
     coverUrl = `https://${coverUrl}`;
   }
-  if (!coverUrl) coverUrl = '/favicon.png';
+  if (!coverUrl) coverUrl = PLACEHOLDER_COVER;
   if (asCover) asCover.src = coverUrl;
   if (asTitle) asTitle.textContent = track.title || 'Трек';
   
@@ -2281,33 +2536,46 @@ function openActionSheet(track) {
 
   if (asBtnLike && trackId) {
     asBtnLike.style.display = 'flex';
-    const isLiked = state.likedTrackIds.has(trackId);
+    const isLiked = state.likedTrackIds ? state.likedTrackIds.has(trackId) : false;
     asBtnLike.querySelector('i').className = isLiked ? 'bi bi-heart-fill text-danger' : 'bi bi-heart';
     asBtnLike.querySelector('i').style.color = isLiked ? '#ff3333' : 'inherit';
     asLikeText.textContent = isLiked ? 'Удалить из коллекции' : 'Добавить в коллекцию';
 
     asBtnLike.onclick = async () => {
       closeActionSheet();
-      try {
-        const action = isLiked ? 'unlike' : 'like';
-        if (action === 'like') {
-          state.likedTrackIds.add(trackId);
+      const wasLiked = isLiked;
+      const applyUI = (liked) => {
+        if (state.likedTrackIds) {
+          if (liked) state.likedTrackIds.add(trackId);
+          else state.likedTrackIds.delete(trackId);
+        }
+        if (liked) {
           state.tracks.unshift({ id: trackId, title: track.title, artists: artistName, coverUri: track.coverUri, explicit: track.explicit || track.track?.explicit, isLiberty: track.isLiberty, track: track.track || track });
         } else {
-          state.likedTrackIds.delete(trackId);
           state.tracks = state.tracks.filter(t => String(t.id) !== trackId);
         }
         renderTracks();
         if (state.currentTrack && String(state.currentTrack.id) === trackId) {
           const heartIcon = dom.btnLike?.querySelector('i');
           if (heartIcon) {
-            heartIcon.className = action === 'like' ? 'bi bi-heart-fill text-danger' : 'bi bi-heart';
-            heartIcon.style.color = action === 'like' ? '#ff3333' : 'inherit';
+            heartIcon.className = liked ? 'bi bi-heart-fill text-danger' : 'bi bi-heart';
+            heartIcon.style.color = liked ? '#ff3333' : 'inherit';
           }
         }
-        await YandexClient.like(trackId, action, state.token);
+      };
+      try {
+        applyUI(!wasLiked);
+        const res = await YandexClient.like(trackId, wasLiked ? 'unlike' : 'like', state.token);
+        if (res && res.success === false) {
+          // fetch() does not reject on 4xx/5xx, so a failed like used to look
+          // successful forever. Put the UI back.
+          applyUI(wasLiked);
+          showToast('Не удалось изменить коллекцию', 'bi-exclamation-circle');
+        }
       } catch (e) {
         console.error(e);
+        applyUI(wasLiked);
+        showToast('Сетевая ошибка', 'bi-wifi-off');
       }
     };
   }
@@ -2325,26 +2593,37 @@ function openActionSheet(track) {
 
   // Add to playlist
   if (asBtnPlaylist) {
-    asBtnPlaylist.onclick = () => {
-      openPlaylistChooser(trackId);
-    };
+    // Without a real track id the API call would be sent with an empty
+    // track-ids list and produce a bogus result.
+    if (trackId) {
+      asBtnPlaylist.onclick = () => {
+        openPlaylistChooser(trackId);
+      };
+    } else {
+      asBtnPlaylist.style.display = 'none';
+    }
   }
 
   // Report censorship
   if (asBtnReport && trackId) {
-    asBtnReport.onclick = async () => {
-      asReportText.textContent = 'Отправка...';
+asBtnReport.onclick = async () => {
+      asReportText.textContent = 'Отправляется...';
       try {
         let sent = false;
-        try {
-          const r1 = await fetch('/api/report', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ track_id: Number(trackId), replaced: false })
-          });
-          const d1 = await r1.json();
-          if (r1.ok && !d1.error) sent = true;
-        } catch(e) {}
+        // On file:// (the packaged app) a root-relative /api/ URL cannot resolve
+        // at all, so go straight to the hosted endpoint.
+        const canUseRelativeApi = typeof isLocal !== 'undefined' && isLocal;
+        if (canUseRelativeApi) {
+          try {
+            const r1 = await fetch('/api/report', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ track_id: Number(trackId), replaced: false })
+            });
+            const d1 = await r1.json();
+            if (r1.ok && !d1.error) sent = true;
+          } catch(e) {}
+        }
 
         if (!sent) {
           const r2 = await fetch('https://ym-liberty-bot.vercel.app/api/bot', {
@@ -2354,6 +2633,8 @@ function openActionSheet(track) {
           });
           if (r2.ok) sent = true;
         }
+
+        if (!sent) throw new Error('report failed');
 
         asReportText.textContent = '✅ Репорт отправлен в бот!';
         setTimeout(() => closeActionSheet(), 1400);
@@ -2401,9 +2682,9 @@ async function openPlaylistChooser(trackId) {
         item.style.borderRadius = '8px';
         item.style.background = 'rgba(255,255,255,0.05)';
         item.innerHTML = `
-          <img src="${pl.coverUri || '/favicon.png'}" style="width: 44px; height: 44px; border-radius: 6px; margin-right: 12px; object-fit: cover;">
+          <img src="${pl.coverUri || PLACEHOLDER_COVER}" style="width: 44px; height: 44px; border-radius: 6px; margin-right: 12px; object-fit: cover;">
           <div style="flex: 1;">
-            <div style="font-weight: bold; font-size: 15px;">${pl.title}</div>
+            <div style="font-weight: bold; font-size: 15px;">${escapeHtml(pl.title)}</div>
             <div style="font-size: 12px; color: var(--text-secondary);">${pl.trackCount} треков</div>
           </div>
           <i class="bi bi-plus-circle" style="font-size: 20px; color: var(--accent-color);"></i>
@@ -2454,7 +2735,7 @@ if (btnTrackMenu) {
     const current = state.currentTrack || state.queue[state.queueIndex];
     if (current) {
       const isExplicit = current.explicit || current.contentWarning === 'explicit';
-      const cover = current.cover || current.coverUri || current.track?.coverUri || current.track?.albums?.[0]?.coverUri || '/favicon.png';
+      const cover = current.cover || current.coverUri || current.track?.coverUri || current.track?.albums?.[0]?.coverUri || PLACEHOLDER_COVER;
       const trackData = {
         id: current.id,
         title: current.title,
@@ -2494,7 +2775,7 @@ document.addEventListener('click', (e) => {
     const trackData = {
       title: titleText || 'Unknown',
       artists: artistEl ? artistEl.textContent : '',
-      coverUri: imgEl ? imgEl.src : '/favicon.png'
+      coverUri: imgEl ? imgEl.src : PLACEHOLDER_COVER
     };
     openActionSheet(trackData);
   }
@@ -2506,6 +2787,17 @@ document.addEventListener('click', (e) => {
 const WAVE_STATS_KEY = 'ym_wave_stats';
 const STATS_PLAYLIST_PREFIX = '_ym_stats:';
 let syncPlaylistKind = null;
+// Cloud history-playlist sync state (declared here so it is initialised long
+// before any of the async sync paths can touch it).
+let pendingSyncTracks = [];
+let syncTracksTimeout = null;
+let syncedTrackIds = new Set();
+const SYNCED_TRACK_IDS_LIMIT = 3000;
+let syncResolveAttempts = 0;
+let syncRetries = 0;
+// Set when the account-side stats sync is known to be failing, so the UI can
+// stop pretending the counters are safe in the cloud.
+let statsSyncFailed = false;
 let lastAudioSampleTime = null;
 let lastAudioCurrentTrackId = null;
 
@@ -2515,16 +2807,23 @@ function getWaveStats() {
     const raw = localStorage.getItem(WAVE_STATS_KEY);
     if (raw) {
       const data = JSON.parse(raw);
+      // Legacy shape migration: older builds stored {tracks, seconds} with no
+      // split between "today" and "all time". The old counters were lifetime
+      // values, so carry them into the totals only — copying them into *today*
+      // inflated the daily figure by the entire history on upgrade.
       if (data.tracks !== undefined && data.totalTracks === undefined) {
         data.totalTracks = data.tracks || 0;
         data.totalSeconds = data.seconds || 0;
-        data.todayTracks = data.tracks || 0;
-        data.todaySeconds = data.seconds || 0;
+        data.todayTracks = 0;
+        data.todaySeconds = 0;
       }
+      // Day rollover: reset the daily counters. Persist immediately so the
+      // stored date is consistent and a later save cannot write stale values.
       if (data.date !== today) {
         data.date = today;
         data.todayTracks = 0;
         data.todaySeconds = 0;
+        try { localStorage.setItem(WAVE_STATS_KEY, JSON.stringify(data)); } catch (e) {}
       }
       return data;
     }
@@ -2542,18 +2841,41 @@ function getWaveStats() {
 function saveWaveStats(stats) {
   try {
     localStorage.setItem(WAVE_STATS_KEY, JSON.stringify(stats));
+    waveStatsDirty = false;
   } catch (e) {}
 }
 
+// The rAF loop calls accumulateListeningSeconds every frame. Writing to
+// localStorage and repainting 5 DOM nodes 60-120x/second was the single biggest
+// source of jank and battery drain. Accumulate in memory and persist at most
+// once a second — getWaveStats() re-reads storage, so the pending delta has to
+// be kept here or it would be thrown away.
+let waveStatsDirty = false;
+let lastWaveStatsPersist = 0;
+let pendingSeconds = 0;
+
 function accumulateListeningSeconds(sec) {
   if (!sec || sec <= 0) return;
-  const stats = getWaveStats();
-  stats.todaySeconds = (stats.todaySeconds || 0) + sec;
-  stats.totalSeconds = (stats.totalSeconds || 0) + sec;
-  saveWaveStats(stats);
-  if (!document.hidden) {
-    updateWaveStatsDisplay();
+  pendingSeconds += sec;
+  waveStatsDirty = true;
+
+  const now = Date.now();
+  if (now - lastWaveStatsPersist >= 1000) {
+    flushWaveStats();
   }
+}
+
+function flushWaveStats() {
+  if (!waveStatsDirty && pendingSeconds === 0) return;
+  const stats = getWaveStats();
+  if (pendingSeconds > 0) {
+    stats.todaySeconds = (stats.todaySeconds || 0) + pendingSeconds;
+    stats.totalSeconds = (stats.totalSeconds || 0) + pendingSeconds;
+    pendingSeconds = 0;
+  }
+  saveWaveStats(stats);
+  lastWaveStatsPersist = Date.now();
+  if (!document.hidden) updateWaveStatsDisplay();
 }
 
 function recordListeningProgress(forcedSeconds = 0) {
@@ -2629,6 +2951,13 @@ function updateWaveStatsDisplay() {
   // Separate total cards below
   if (elTotalTracks) elTotalTracks.textContent = stats.totalTracks || 0;
   if (elTotalTime) elTotalTime.textContent = formatDurationStats(stats.totalSeconds || 0);
+
+  // Surface a failing account sync instead of silently freezing the counters.
+  const syncWarning = document.getElementById('vibe-sync-warning');
+  if (syncWarning) {
+    if (statsSyncFailed && state.token) syncWarning.classList.remove('hidden');
+    else syncWarning.classList.add('hidden');
+  }
 }
 
 // --- Cloud Account Persistence (Restores stats on app reinstall) ---
@@ -2666,9 +2995,18 @@ async function syncWaveStatsFromAccount() {
           const plData = await YandexClient.getPlaylist(statPl.kind, state.token);
           if (plData && plData.tracks && plData.tracks.length > 0) {
             state.vibeHistory = state.vibeHistory || new Set();
-            plData.tracks.forEach(tr => {
+            // The playlist is newest-first (tracks are inserted at position 0),
+            // so reverse it to get the chronological order the dedup engine expects.
+            const ordered = plData.tracks.slice().reverse();
+            ordered.forEach(tr => {
               if (tr && tr.id) state.vibeHistory.add(String(tr.id));
+              if (tr && tr.id) syncedTrackIds.add(String(tr.id));
             });
+            // Trim to the dedup window, keeping the most recent entries.
+            while (state.vibeHistory.size > VIBE_DEDUP_LIMIT) {
+              const iter = state.vibeHistory.values();
+              state.vibeHistory.delete(iter.next().value);
+            }
             if (typeof saveVibeHistory === 'function') saveVibeHistory();
           }
         }
@@ -2690,25 +3028,59 @@ async function syncWaveStatsFromAccount() {
 }
 
 // Add played track to account sync playlist in background
-let pendingSyncTracks = [];
-let syncTracksTimeout = null;
-
 function addTrackToCloudSync(trackId, albumId) {
   if (!state.token || !trackId) return;
-  pendingSyncTracks.push({ id: String(trackId), albumId: String(albumId || 0) });
+  const id = String(trackId);
+  if (syncedTrackIds.has(id)) return;
+  pendingSyncTracks.push({ id, albumId: String(albumId || 0) });
   if (syncTracksTimeout) return;
-  syncTracksTimeout = setTimeout(async () => {
-    syncTracksTimeout = null;
-    const toSend = pendingSyncTracks.splice(0, pendingSyncTracks.length);
-    if (!toSend.length || !syncPlaylistKind || !YandexClient.addTrackToPlaylist) return;
-    try {
-      for (const t of toSend) {
-        await YandexClient.addTrackToPlaylist(syncPlaylistKind, t.id, t.albumId, state.token);
-      }
-    } catch (e) {
-      console.warn("Cloud sync add track error:", e);
+  syncTracksTimeout = setTimeout(flushCloudSyncQueue, 8000);
+}
+
+async function flushCloudSyncQueue() {
+  syncTracksTimeout = null;
+  if (!pendingSyncTracks.length) return;
+  // Resolve the target playlist BEFORE draining the buffer. The old code
+  // splice()d the queue first and then bailed out when the playlist was not
+  // known yet, silently throwing the whole batch away.
+  if (!syncPlaylistKind || !YandexClient.addTrackToPlaylist) {
+    // Bounded waiting: the playlist is created by scheduleAccountStatsSync, but
+    // if that never happens we must not retry forever.
+    if (syncResolveAttempts >= 8) {
+      pendingSyncTracks = [];
+      syncResolveAttempts = 0;
+      return;
     }
-  }, 8000);
+    syncResolveAttempts++;
+    syncTracksTimeout = setTimeout(flushCloudSyncQueue, 4000);
+    return;
+  }
+  syncResolveAttempts = 0;
+  const toSend = pendingSyncTracks.splice(0, pendingSyncTracks.length);
+  try {
+    for (const t of toSend) {
+      await YandexClient.addTrackToPlaylist(syncPlaylistKind, t.id, t.albumId, state.token);
+      syncedTrackIds.add(t.id);
+    }
+    while (syncedTrackIds.size > SYNCED_TRACK_IDS_LIMIT) {
+      const iter = syncedTrackIds.values();
+      syncedTrackIds.delete(iter.next().value);
+    }
+  } catch (e) {
+    console.warn("Cloud sync add track error:", e);
+    // Re-queue only what we failed to push (succeeded ids are already recorded),
+    // capped so the buffer cannot grow without bound, and retry a limited
+    // number of times instead of forever.
+    const failed = toSend.filter(t => !syncedTrackIds.has(t.id));
+    if (syncRetries < 4) {
+      syncRetries++;
+      pendingSyncTracks = failed.concat(pendingSyncTracks).slice(0, 500);
+      if (!syncTracksTimeout) syncTracksTimeout = setTimeout(flushCloudSyncQueue, 15000);
+    } else {
+      syncRetries = 0;
+      pendingSyncTracks = [];
+    }
+  }
 }
 
 let syncTimeout = null;
@@ -2739,10 +3111,18 @@ function scheduleAccountStatsSync(immediate = false) {
       }
 
       if (syncPlaylistKind && YandexClient.renamePlaylist) {
-        await YandexClient.renamePlaylist(syncPlaylistKind, newTitle, state.token);
+        const renamed = await YandexClient.renamePlaylist(syncPlaylistKind, newTitle, state.token);
+        // A rejected rename used to be swallowed by a console.warn, so the stats
+        // silently froze with no way for the user to know.
+        if (renamed && renamed.success === false) {
+          statsSyncFailed = true;
+        } else {
+          statsSyncFailed = false;
+        }
       }
     } catch (e) {
       console.warn('Stats account sync update error:', e);
+      statsSyncFailed = true;
     }
   }, immediate ? 100 : 20000);
 }
@@ -2751,15 +3131,25 @@ function scheduleAccountStatsSync(immediate = false) {
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     recordListeningProgress();
+    flushWaveStats();
     updateWaveStatsDisplay();
+  } else {
+    // Persist whatever is still pending before the WebView can be frozen.
+    flushWaveStats();
   }
 });
 window.addEventListener('focus', () => {
   recordListeningProgress();
+  flushWaveStats();
   updateWaveStatsDisplay();
 });
 window.addEventListener('beforeunload', () => {
   recordListeningProgress();
+  flushWaveStats();
+  scheduleAccountStatsSync(true);
+});
+window.addEventListener('pagehide', () => {
+  flushWaveStats();
   scheduleAccountStatsSync(true);
 });
 
@@ -2823,34 +3213,51 @@ function initVibeMoodChips() {
       localStorage.setItem('ym_active_vibe_mood', moodName);
       syncVibeMoodUI(moodName);
       updateWaveStatsDisplay();
-      showToast(`Настроение: ${moodName}`);
 
       const settings = VIBE_MOOD_SETTINGS_MAP[moodKey] || { moodEnergy: 'all', diversity: 'default' };
 
       // Отправляем настройки в Яндекс Ротор
       if (state.token && YandexClient.setVibeSettings) {
-        YandexClient.setVibeSettings(settings.moodEnergy, settings.diversity, state.token).catch(e => {
+        try {
+          const res = await YandexClient.setVibeSettings(settings.moodEnergy, settings.diversity, state.token);
+          if (res && res.success === false) {
+            showToast(`Ротор не принял настроение «${moodName}»`, 'bi-exclamation-circle');
+          } else {
+            showToast(`Настроение: ${moodName}`, 'bi-check2-circle');
+          }
+        } catch (e) {
           console.warn('Failed to update vibe settings:', e);
-        });
+          showToast('Не удалось применить настроение', 'bi-wifi-off');
+        }
+      } else {
+        // Without a token the mood is only stored locally — say so instead of
+        // silently showing a selected chip that Rotor knows nothing about.
+        showToast(`Настроение: ${moodName} (применится после входа)`, 'bi-exclamation-circle');
       }
 
       if (state.queueMode === 'vibe' && (!state.currentStation || state.currentStation === 'user:onyourwave')) {
         updatePlaybackContextHeader('ИГРАЕТ ИЗ ВОЛНЫ', moodName === 'Всё подряд' ? 'Моя Волна' : `Моя Волна • ${moodName}`);
 
         // Бесшовно перестраиваем очередь под новое настроение
+        if (state.isFetchingVibe) {
+          console.warn('Vibe fetch already in progress; skipping mood queue rebuild');
+          return;
+        }
+        state.isFetchingVibe = true;
         try {
-          state.isFetchingVibe = true;
           const data = await YandexClient.getVibe(state.token, null, 'user:onyourwave');
           if (data && data.tracks && data.tracks.length > 0) {
-            state.vibeBatchId = data.batchId;
             const currentTr = state.queue[state.queueIndex];
+            const excluded = new Set();
+            if (currentTr) excluded.add(String(currentTr.id));
+            // New mood, but the anti-loop history still applies.
+            let nextTracks = dedupeVibeBatch(data.tracks, excluded, 100);
+            rememberVibeBatch(nextTracks, data.batchId);
             if (currentTr) {
-              state.queue = [currentTr, ...data.tracks.filter(t => String(t.id) !== String(currentTr.id))];
-              state.queueIndex = 0;
-            } else {
-              state.queue = data.tracks;
-              state.queueIndex = 0;
+              nextTracks = [currentTr, ...nextTracks.filter(t => String(t.id) !== String(currentTr.id))];
             }
+            state.queue = nextTracks;
+            state.queueIndex = 0;
             if (typeof preloadNextTrack === 'function') {
               preloadNextTrack();
             }
@@ -2863,6 +3270,24 @@ function initVibeMoodChips() {
       }
     });
   });
+}
+
+// The selected mood lives on the Rotor account server-side, but if it is ever
+// reset there (or the user signs into another account) the chip would claim one
+// mood while Rotor played another. Re-apply it once per session.
+async function reapplySavedVibeMood() {
+  if (!state.token || !YandexClient || !YandexClient.setVibeSettings) return;
+  const savedMood = localStorage.getItem('ym_active_vibe_mood') || getWaveStats().mood;
+  if (!savedMood) return;
+  const chip = Array.from(document.querySelectorAll('.vibe-chip'))
+    .find(c => c.textContent.trim() === savedMood);
+  const moodKey = (chip && chip.getAttribute('data-mood')) || 'all';
+  const settings = VIBE_MOOD_SETTINGS_MAP[moodKey] || { moodEnergy: 'all', diversity: 'default' };
+  try {
+    await YandexClient.setVibeSettings(settings.moodEnergy, settings.diversity, state.token);
+  } catch (e) {
+    console.warn('Could not re-apply saved vibe mood:', e);
+  }
 }
 
 // ==========================================
@@ -3082,18 +3507,19 @@ function initEqualizerAndQualityUI() {
     });
   }
 
-  // Audio Quality Setting
+// Audio Quality Setting
   const qualitySelect = document.getElementById('setting-audio-quality');
   const qualityLabel = document.getElementById('audio-quality-label');
   const savedQuality = localStorage.getItem('ym_audio_quality') || '320';
+  const qualityText = (q) => (String(q) === '1000' ? 'Lossless (FLAC)' : `${q} kbps`);
   if (qualitySelect) {
     qualitySelect.value = savedQuality;
-    if (qualityLabel) qualityLabel.textContent = `${savedQuality} kbps`;
+    if (qualityLabel) qualityLabel.textContent = qualityText(savedQuality);
     qualitySelect.addEventListener('change', () => {
       const q = qualitySelect.value;
       localStorage.setItem('ym_audio_quality', q);
-      if (qualityLabel) qualityLabel.textContent = `${q} kbps`;
-      showToast(`Качество аудио: ${q} kbps`);
+      if (qualityLabel) qualityLabel.textContent = qualityText(q);
+      showToast(`Качество звука: ${qualityText(q)}`, 'bi-check2-circle');
     });
   }
 
@@ -3138,14 +3564,24 @@ function initEqualizerAndQualityUI() {
 // In-App Auto-Update System (Vercel Host)
 // ==========================================
 function getAppVersionInfo() {
-  let versionCode = 16;
-  let versionName = '1.0.15';
+  // Fallbacks must stay in sync with android:versionCode / android:versionName
+  // in AndroidManifest.xml. They previously read 4 / '1.0.3', which made a
+  // failed bridge lookup silently claim an ancient version and could hide or
+  // fake an update.
+  let versionCode = 17;
+  let versionName = '1.1.0';
   if (window.AndroidBridge) {
     if (typeof window.AndroidBridge.getVersionCode === 'function') {
-      try { versionCode = window.AndroidBridge.getVersionCode() || 4; } catch (e) {}
+      try {
+        const code = window.AndroidBridge.getVersionCode();
+        if (code) versionCode = code;
+      } catch (e) {}
     }
     if (typeof window.AndroidBridge.getVersionName === 'function') {
-      try { versionName = window.AndroidBridge.getVersionName() || '1.0.3'; } catch (e) {}
+      try {
+        const name = window.AndroidBridge.getVersionName();
+        if (name) versionName = name;
+      } catch (e) {}
     }
   }
   return { versionCode, versionName };
@@ -3420,7 +3856,7 @@ function renderHomeReleases(tracks) {
     card.className = 'release-card';
     card.setAttribute('data-track-id', t.id);
 
-    const coverUrl = t.coverUri || '/favicon.png';
+    const coverUrl = t.coverUri || PLACEHOLDER_COVER;
     let shortTag = t.source || 'Новинка';
     if (shortTag.includes(':')) shortTag = shortTag.split(':')[0].trim();
     if (shortTag.length > 15) shortTag = shortTag.slice(0, 14) + '…';
@@ -3525,11 +3961,11 @@ function initVibeAmbientAura() {
   window.addEventListener('resize', resizeAura);
   resizeAura();
 
-  renderAuraFrame();
+  startAuraLoop();
 }
 
 function updateVibeAmbientAura(coverUrl) {
-  if (!coverUrl || coverUrl === '/favicon.png') return;
+  if (!coverUrl || coverUrl === PLACEHOLDER_COVER) return;
   try {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -3615,12 +4051,23 @@ function getAudioSpectrumData() {
   };
 }
 
-function renderAuraFrame() {
-  vibeAuraAnimFrame = requestAnimationFrame(renderAuraFrame);
-  if (!vibeAuraCtx) return;
-
+function auraViewIsActive() {
   const vibeView = document.getElementById('view-vibe');
-  if (vibeView && !vibeView.classList.contains('active')) return;
+  return !!(vibeView && vibeView.classList.contains('active'));
+}
+
+function startAuraLoop() {
+  if (vibeAuraAnimFrame) return;
+  vibeAuraAnimFrame = requestAnimationFrame(renderAuraFrame);
+}
+
+function renderAuraFrame() {
+  // Do not keep a rAF callback alive for the whole app lifetime when the Wave
+  // tab is not even visible. The loop restarts from startAuraLoop().
+  vibeAuraAnimFrame = 0;
+  if (!vibeAuraCtx) return;
+  if (!auraViewIsActive()) return;
+  vibeAuraAnimFrame = requestAnimationFrame(renderAuraFrame);
 
   const now = Date.now();
   const audio = getAudioSpectrumData();

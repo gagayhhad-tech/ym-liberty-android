@@ -10,6 +10,12 @@
 
 .field private final mWebView:Landroid/webkit/WebView;
 
+# Kept as fields so they can be closed from a finally-style path even when an
+# exception is thrown mid-download (the previous code leaked file descriptors).
+.field private mStream:Ljava/io/InputStream;
+
+.field private mOutput:Ljava/io/FileOutputStream;
+
 # direct methods
 .method public constructor <init>(Landroid/content/Context;Landroid/webkit/WebView;Ljava/lang/String;)V
     .registers 4
@@ -26,8 +32,97 @@
 .end method
 
 # virtual methods
+.method private closeQuietly()V
+    .registers 2
+
+    :try_start_0
+    iget-object v0, p0, Lcom/ymliberty/app/ApkDownloadRunnable;->mStream:Ljava/io/InputStream;
+
+    if-eqz v0, :cond_out
+
+    invoke-virtual {v0}, Ljava/io/InputStream;->close()V
+
+    :cond_out
+    iget-object v0, p0, Lcom/ymliberty/app/ApkDownloadRunnable;->mOutput:Ljava/io/FileOutputStream;
+
+    if-eqz v0, :cond_done
+
+    invoke-virtual {v0}, Ljava/io/FileOutputStream;->close()V
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+
+    :catch_0
+    :cond_done
+    const/4 v0, 0x0
+
+    iput-object v0, p0, Lcom/ymliberty/app/ApkDownloadRunnable;->mStream:Ljava/io/InputStream;
+
+    iput-object v0, p0, Lcom/ymliberty/app/ApkDownloadRunnable;->mOutput:Ljava/io/FileOutputStream;
+
+    return-void
+.end method
+
+# A downloaded file must really be a zip/APK. CDNs and proxies happily answer
+# with an HTML error page, which used to be offered to the installer.
+.method private isZipArchive(Ljava/io/File;)Z
+    .registers 7
+
+    const/4 v0, 0x0
+
+    :try_start_0
+    new-instance v1, Ljava/io/RandomAccessFile;
+
+    const-string v2, "r"
+
+    invoke-direct {v1, p1, v2}, Ljava/io/RandomAccessFile;-><init>(Ljava/io/File;Ljava/lang/String;)V
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+
+    const/4 v2, 0x4
+
+    :try_start_1
+    new-array v2, v2, [B
+
+    invoke-virtual {v1, v2}, Ljava/io/RandomAccessFile;->readFully([B)V
+
+    const/4 v3, 0x0
+
+    aget-byte v3, v2, v3
+
+    const/16 v4, 0x50
+
+    if-ne v3, v4, :cond_close
+
+    const/4 v3, 0x1
+
+    aget-byte v3, v2, v3
+
+    const/16 v4, 0x4b
+
+    if-ne v3, v4, :cond_close
+
+    const/4 v0, 0x1
+
+    :cond_close
+    invoke-virtual {v1}, Ljava/io/RandomAccessFile;->close()V
+    :try_end_1
+    .catch Ljava/lang/Throwable; {:try_start_1 .. :try_end_1} :catch_1
+
+    return v0
+
+    :catch_1
+    :try_start_2
+    invoke-virtual {v1}, Ljava/io/RandomAccessFile;->close()V
+    :try_end_2
+    .catch Ljava/lang/Throwable; {:try_start_2 .. :try_end_2} :catch_0
+
+    :catch_0
+    const/4 v0, 0x0
+    return v0
+.end method
+
 .method public run()V
-    .registers 12
+    .locals 12
 
     :try_start_0
     new-instance v0, Ljava/net/URL;
@@ -54,6 +149,38 @@
 
     invoke-virtual {v0}, Ljava/net/HttpURLConnection;->connect()V
 
+    invoke-virtual {v0}, Ljava/net/HttpURLConnection;->getResponseCode()I
+
+    move-result v1
+
+    const/16 v10, 0xc8
+
+    if-lt v1, v10, :cond_http_error
+
+    const/16 v10, 0x12c
+
+    if-lt v1, v10, :cond_http_ok
+
+    :cond_http_error
+    new-instance v10, Ljava/io/IOException;
+
+    new-instance v11, Ljava/lang/StringBuilder;
+
+    const-string v2, "HTTP "
+
+    invoke-direct {v11, v2}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
+
+    invoke-virtual {v11, v1}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+
+    invoke-virtual {v11}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+
+    move-result-object v1
+
+    invoke-direct {v10, v1}, Ljava/io/IOException;-><init>(Ljava/lang/String;)V
+
+    throw v10
+
+    :cond_http_ok
     invoke-virtual {v0}, Ljava/net/HttpURLConnection;->getContentLength()I
 
     move-result v1
@@ -61,6 +188,8 @@
     invoke-virtual {v0}, Ljava/net/HttpURLConnection;->getInputStream()Ljava/io/InputStream;
 
     move-result-object v0
+
+    iput-object v0, p0, Lcom/ymliberty/app/ApkDownloadRunnable;->mStream:Ljava/io/InputStream;
 
     new-instance v2, Ljava/io/File;
 
@@ -77,6 +206,8 @@
     new-instance v3, Ljava/io/FileOutputStream;
 
     invoke-direct {v3, v2}, Ljava/io/FileOutputStream;-><init>(Ljava/io/File;)V
+
+    iput-object v3, p0, Lcom/ymliberty/app/ApkDownloadRunnable;->mOutput:Ljava/io/FileOutputStream;
 
     const/16 v2, 0x2000
 
@@ -132,10 +263,46 @@
     :cond_finish
     invoke-virtual {v3}, Ljava/io/FileOutputStream;->flush()V
 
-    invoke-virtual {v3}, Ljava/io/FileOutputStream;->close()V
-
     invoke-virtual {v0}, Ljava/io/InputStream;->close()V
 
+    invoke-virtual {v3}, Ljava/io/FileOutputStream;->close()V
+
+    const/4 v0, 0x0
+
+    iput-object v0, p0, Lcom/ymliberty/app/ApkDownloadRunnable;->mStream:Ljava/io/InputStream;
+
+    iput-object v0, p0, Lcom/ymliberty/app/ApkDownloadRunnable;->mOutput:Ljava/io/FileOutputStream;
+
+    # Verify the payload before offering it to the package installer.
+    new-instance v0, Ljava/io/File;
+
+    iget-object v1, p0, Lcom/ymliberty/app/ApkDownloadRunnable;->mContext:Landroid/content/Context;
+
+    invoke-virtual {v1}, Landroid/content/Context;->getCacheDir()Ljava/io/File;
+
+    move-result-object v1
+
+    const-string v3, "update.apk"
+
+    invoke-direct {v0, v1, v3}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+
+    invoke-direct {p0, v0}, Lcom/ymliberty/app/ApkDownloadRunnable;->isZipArchive(Ljava/io/File;)Z
+
+    move-result v1
+
+    if-nez v1, :cond_install_ok
+
+    invoke-virtual {v0}, Ljava/io/File;->delete()Z
+
+    new-instance v0, Ljava/io/IOException;
+
+    const-string v1, "Downloaded file is not a valid APK archive"
+
+    invoke-direct {v0, v1}, Ljava/io/IOException;-><init>(Ljava/lang/String;)V
+
+    throw v0
+
+    :cond_install_ok
     # Report 100%
     iget-object v0, p0, Lcom/ymliberty/app/ApkDownloadRunnable;->mWebView:Landroid/webkit/WebView;
 
@@ -183,6 +350,8 @@
 
     :catch_err
     move-exception v0
+
+    invoke-direct {p0}, Lcom/ymliberty/app/ApkDownloadRunnable;->closeQuietly()V
 
     iget-object v1, p0, Lcom/ymliberty/app/ApkDownloadRunnable;->mWebView:Landroid/webkit/WebView;
 

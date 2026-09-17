@@ -59,6 +59,12 @@
     .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
 
     :catch_0
+    const-string v0, "YMLiberty"
+
+    const-string v1, "Uncaught exception"
+
+    invoke-static {v0, v1, p2}, Landroid/util/Log;->e(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I
+
     iget-object v0, p0, Lcom/ymliberty/app/CrashHandler;->mDefaultHandler:Ljava/lang/Thread$UncaughtExceptionHandler;
 
     if-eqz v0, :cond_exit

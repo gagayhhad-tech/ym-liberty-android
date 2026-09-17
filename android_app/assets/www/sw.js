@@ -1,13 +1,14 @@
-const CACHE_NAME = "ym-liberty-v8";
+const CACHE_NAME = "ym-liberty-v9";
 const ASSETS_TO_CACHE = [
-  "/",
-  "/index.html",
-  "/app.css",
-  "/app.js",
-  "/manifest.json",
-  "/favicon.png",
-  "/icon-192.png",
-  "/icon-512.png"
+  "./",
+  "index.html",
+  "app.css",
+  "app.js",
+  "yandex.js",
+  "manifest.json",
+  "favicon.png",
+  "icon-192.png",
+  "icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {

@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/gagayhhad-tech/ym-liberty-android/releases"><img src="https://img.shields.io/badge/Release-v1.0.15-blue?style=flat-square&logo=android" alt="Release v1.0.15" /></a>
+  <a href="https://github.com/gagayhhad-tech/ym-liberty-android/releases"><img src="https://img.shields.io/badge/Release-v1.1.0-blue?style=flat-square&logo=android" alt="Release v1.1.0" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GNU_GPLv3-green?style=flat-square" alt="License GPLv3" /></a>
   <a href="https://developer.android.com/"><img src="https://img.shields.io/badge/Platform-Android_8.0+-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Platform" /></a>
   <a href="https://github.com/gagayhhad-tech/YandexMusicLiberty"><img src="https://img.shields.io/badge/Desktop-Windows%20%7C%20Linux-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Версия для ПК" /></a>
@@ -38,7 +38,7 @@
 
 ### 🌊 Полноценная «Моя Волна»
 - **Умные рекомендации Яндекса:** прямое взаимодействие с официальным алгоритмом **Yandex Rotor API** с поддержкой всех настроений (*Всё подряд, Бодрое, Спокойное, Радостное, Открытия*).
-- **Защита от зацикливания:** продвинутый механизм дедупликации — Волна больше не повторяет одни и те же треки по кругу и плавно подгружает рекомендации в фоне.
+- **Защита от зацикливания:** постоянная история прослушивания (до 1000 треков, дублируется в скрытый плейлист аккаунта) — новые рекомендации от Rotor фильтруются против неё, поэтому Волна не повторяет уже сыгранное. Если Ротор вернул только повторы, подставляются самые давние треки, чтобы эфир не прерывался.
 - **Статистика прослушивания:** отслеживание количества прослушанных треков и минут за день и за всё время с облачной синхронизацией.
 
 ### 💎 Обход цензуры (YM Liberty Engine)
@@ -51,7 +51,7 @@
 - **Интуитивные жесты:** свайп мини-плеера вверх для открытия, свайп вниз для закрытия, горизонтальные свайпы для переключения треков и навигации.
 
 ### 🎚 Студийный звук и эквалайзер
-- **Максимальное качество:** поддержка HQ 320 kbps и Lossless/FLAC.
+- **Максимальное качество:** поддержка HQ 320 kbps и Lossless/FLAC (выбирается в настройках, эндпоинт подставляется по кодеку — `get-mp3` или `get-flac`).
 - **5-полосный эквалайзер Web Audio API:** встроенный параметрический эквалайзер с пресетами (*Bass Boost, Rock, Pop, Vocal, Acoustic, Electronic* и др.) и ручной регулировкой частот (60 Гц, 230 Гц, 910 Гц, 3.6 кГц, 14 кГц).
 
 ### 🔔 Интеграция с Android
@@ -76,6 +76,16 @@
 - **Apktool** (2.9.3+)
 - **uber-apk-signer**
 
+> **О подписи.** `build.bat` читает пароль релизного ключа из переменной
+> окружения `YMLIBERTY_KSPASS` — в репозитории он не хранится. Без этой
+> переменной сборка останавливается с ошибкой (или, если самого файла ключа нет,
+> падает в debug-подпись, которой нельзя обновить установленное приложение).
+> Свой ключ можно сгенерировать командой:
+> ```bash
+> keytool -genkeypair -v -keystore ymliberty.jks -alias ymliberty \
+>   -keyalg RSA -keysize 4096 -validity 10000
+> ```
+
 ### Инструкция
 
 1. **Клонируйте репозиторий:**
@@ -94,8 +104,12 @@
      # Сборка структуры проекта в APK
      java -jar apktool.jar b android_app -o YMLiberty_unsigned.apk
 
-     # Выравнивание и подпись релизным ключом
-     java -jar uber-apk-signer.jar -a YMLiberty_unsigned.apk --overwrite
+     # Выравнивание и подпись релизным ключом.
+     # Пароль берётся из переменной окружения — в репозитории его нет:
+     #   export YMLIBERTY_KSPASS='ваш-пароль'
+     java -jar uber-apk-signer.jar -a YMLiberty_unsigned.apk \
+       --ks ymliberty.jks --ksAlias ymliberty \
+       --ksPass "$YMLIBERTY_KSPASS" --ksKeyPass "$YMLIBERTY_KSPASS" --overwrite
      ```
 
 Готовый APK-файл появится в корне проекта: `YMLiberty.apk`.
