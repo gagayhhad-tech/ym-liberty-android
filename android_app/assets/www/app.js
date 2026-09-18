@@ -3030,73 +3030,128 @@ function updateWaveStatsDisplay() {
 }
 
 // --- Cloud Account Persistence (Restores stats on app reinstall) ---
+//
+// Two independent mechanisms, which used to be conflated:
+//  1. the listening counters live on the YM Liberty server, keyed by uid;
+//  2. the Wave history playlist on the Yandex account only backs the
+//     "never repeat a track" dedup window.
+// A failure in (2) must not flag the counters as unsynced, so only (1) drives
+// statsSyncFailed.
 async function syncWaveStatsFromAccount() {
-  if (!state.token || !YandexClient.getUserPlaylistsRaw) {
-    ylog('SYNC', 'skipped: no token or client unavailable');
+  if (!state.token) {
+    ylog('SYNC', 'skipped: no token');
     return;
   }
+
+  await syncStatsFromServer();
+  await syncWaveHistoryPlaylist();
+}
+
+async function syncStatsFromServer() {
+  if (!state.token || !YandexClient.getServerStats) {
+    ylog('SYNC', 'skipped: no token or stats client unavailable');
+    return;
+  }
+  try {
+    const remote = await YandexClient.getServerStats(state.token);
+    if (!remote || typeof remote !== 'object' || remote.error) {
+      // An empty object means the user simply has no stats yet: push the local
+      // counters up instead of treating it as a sync failure.
+      await pushStatsToServer();
+      return;
+    }
+
+    const local = getWaveStats();
+    const today = new Date().toISOString().slice(0, 10);
+
+    local.totalTracks = Math.max(local.totalTracks || 0, remote.totalTracks || 0);
+    local.totalSeconds = Math.max(local.totalSeconds || 0, remote.totalSeconds || 0);
+    if (remote.date === today) {
+      local.todayTracks = Math.max(local.todayTracks || 0, remote.todayTracks || 0);
+      local.todaySeconds = Math.max(local.todaySeconds || 0, remote.todaySeconds || 0);
+    }
+    saveWaveStats(local);
+    updateWaveStatsDisplay();
+
+    // The local copy may have been ahead (e.g. listening happened offline), so
+    // write the merged result back rather than only pulling.
+    await pushStatsToServer();
+
+    if (statsSyncFailed) ylog('SYNC', 'server stats sync recovered');
+    statsSyncFailed = false;
+  } catch (e) {
+    ylogError('SYNC', 'read stats from server failed: ' + (e && e.message ? e.message : e));
+    statsSyncFailed = true;
+  }
+}
+
+async function pushStatsToServer() {
+  if (!state.token || !YandexClient.saveServerStats) return false;
+  try {
+    const stats = getWaveStats();
+    await YandexClient.saveServerStats(state.token, {
+      totalTracks: stats.totalTracks || 0,
+      totalSeconds: stats.totalSeconds || 0,
+      todayTracks: stats.todayTracks || 0,
+      todaySeconds: stats.todaySeconds || 0,
+      date: stats.date || new Date().toISOString().slice(0, 10)
+    });
+    if (statsSyncFailed) ylog('SYNC', 'server stats sync recovered');
+    statsSyncFailed = false;
+    updateWaveStatsDisplay();
+    return true;
+  } catch (e) {
+    ylogError('SYNC', 'write stats to server failed: ' + (e && e.message ? e.message : e));
+    statsSyncFailed = true;
+    updateWaveStatsDisplay();
+    return false;
+  }
+}
+
+// Resolve (creating it if needed) the hidden account playlist that stores the
+// Wave history. Its title carries no counters — only the marker prefix.
+async function syncWaveHistoryPlaylist() {
+  if (!state.token || !YandexClient.getUserPlaylistsRaw) return;
   try {
     const playlists = await YandexClient.getUserPlaylistsRaw(state.token);
     const statPl = (playlists || []).find(p => p.title && p.title.startsWith(STATS_PLAYLIST_PREFIX));
     if (statPl) {
       syncPlaylistKind = statPl.kind;
-      const parts = statPl.title.replace(STATS_PLAYLIST_PREFIX, '').split(':');
-      if (parts.length >= 5) {
-        const totalTracks = parseInt(parts[0], 10) || 0;
-        const totalSeconds = parseInt(parts[1], 10) || 0;
-        const todayTracks = parseInt(parts[2], 10) || 0;
-        const todaySeconds = parseInt(parts[3], 10) || 0;
-        const statDate = parts[4];
 
-        const local = getWaveStats();
-        const today = new Date().toISOString().slice(0, 10);
-
-        local.totalTracks = Math.max(local.totalTracks || 0, totalTracks);
-        local.totalSeconds = Math.max(local.totalSeconds || 0, totalSeconds);
-        if (statDate === today) {
-          local.todayTracks = Math.max(local.todayTracks || 0, todayTracks);
-          local.todaySeconds = Math.max(local.todaySeconds || 0, todaySeconds);
-        }
-        saveWaveStats(local);
-        updateWaveStatsDisplay();
-      }
-
-      // Restore previously played Wave tracks from account playlist so Wave never repeats tracks after reinstall
-      try {
-        if (YandexClient.getPlaylist) {
-          const plData = await YandexClient.getPlaylist(statPl.kind, state.token);
-          if (plData && plData.tracks && plData.tracks.length > 0) {
-            state.vibeHistory = state.vibeHistory || new Set();
-            // The playlist is newest-first (tracks are inserted at position 0),
-            // so reverse it to get the chronological order the dedup engine expects.
-            const ordered = plData.tracks.slice().reverse();
-            ordered.forEach(tr => {
-              if (tr && tr.id) state.vibeHistory.add(String(tr.id));
-              if (tr && tr.id) syncedTrackIds.add(String(tr.id));
-            });
-            // Trim to the dedup window, keeping the most recent entries.
-            while (state.vibeHistory.size > VIBE_DEDUP_LIMIT) {
-              const iter = state.vibeHistory.values();
-              state.vibeHistory.delete(iter.next().value);
-            }
-            if (typeof saveVibeHistory === 'function') saveVibeHistory();
+      // Restore previously played Wave tracks so the Wave never repeats after a reinstall
+      if (YandexClient.getPlaylist) {
+        const plData = await YandexClient.getPlaylist(statPl.kind, state.token);
+        if (plData && plData.tracks && plData.tracks.length > 0) {
+          state.vibeHistory = state.vibeHistory || new Set();
+          // The playlist is newest-first (tracks are inserted at position 0),
+          // so reverse it to get the chronological order the dedup engine expects.
+          const ordered = plData.tracks.slice().reverse();
+          ordered.forEach(tr => {
+            if (tr && tr.id) state.vibeHistory.add(String(tr.id));
+            if (tr && tr.id) syncedTrackIds.add(String(tr.id));
+          });
+          // Trim to the dedup window, keeping the most recent entries.
+          while (state.vibeHistory.size > VIBE_DEDUP_LIMIT) {
+            const iter = state.vibeHistory.values();
+            state.vibeHistory.delete(iter.next().value);
           }
+          if (typeof saveVibeHistory === 'function') saveVibeHistory();
         }
-      } catch (errPl) {
-        console.warn('Could not load history tracks from sync playlist:', errPl);
       }
+      return;
+    }
+
+    const created = await YandexClient.createPrivatePlaylist(STATS_PLAYLIST_PREFIX + 'wave-history', state.token);
+    if (created && created.kind) {
+      syncPlaylistKind = created.kind;
+      ylog('SYNC', 'created wave history playlist kind=' + created.kind);
     } else {
-      const local = getWaveStats();
-      const today = new Date().toISOString().slice(0, 10);
-      const title = `${STATS_PLAYLIST_PREFIX}${local.totalTracks || 0}:${local.totalSeconds || 0}:${local.todayTracks || 0}:${local.todaySeconds || 0}:${today}`;
-      const created = await YandexClient.createPrivatePlaylist(title, state.token);
-      if (created && created.kind) {
-        syncPlaylistKind = created.kind;
-      }
+      ylogError('SYNC', 'could not create wave history playlist');
     }
   } catch (e) {
-    ylogError('SYNC', 'read stats from account failed: ' + (e && e.message ? e.message : e));
-    statsSyncFailed = true;
+    // Dedup history is a nice-to-have: losing it only means the Wave may repeat
+    // a few tracks, so it must not raise the "stats not syncing" warning.
+    ylogError('SYNC', 'wave history playlist sync failed: ' + (e && e.message ? e.message : e));
   }
 }
 
@@ -3165,41 +3220,8 @@ function scheduleAccountStatsSync(immediate = false) {
   }
   syncTimeout = setTimeout(async () => {
     syncTimeout = null;
-    if (!state.token || !YandexClient.getUserPlaylistsRaw) return;
-    try {
-      const stats = getWaveStats();
-      const today = new Date().toISOString().slice(0, 10);
-      const newTitle = `${STATS_PLAYLIST_PREFIX}${stats.totalTracks || 0}:${stats.totalSeconds || 0}:${stats.todayTracks || 0}:${stats.todaySeconds || 0}:${today}`;
-
-      if (!syncPlaylistKind) {
-        const playlists = await YandexClient.getUserPlaylistsRaw(state.token);
-        const statPl = (playlists || []).find(p => p.title && p.title.startsWith(STATS_PLAYLIST_PREFIX));
-        if (statPl) {
-          syncPlaylistKind = statPl.kind;
-        } else {
-          const created = await YandexClient.createPrivatePlaylist(newTitle, state.token);
-          if (created && created.kind) {
-            syncPlaylistKind = created.kind;
-            ylog('SYNC', 'created account stats playlist kind=' + created.kind);
-          } else {
-            ylogError('SYNC', 'could not create account stats playlist');
-            statsSyncFailed = true;
-          }
-          return;
-        }
-      }
-
-      if (syncPlaylistKind && YandexClient.renamePlaylist) {
-        await YandexClient.renamePlaylist(syncPlaylistKind, newTitle, state.token);
-        // Reaching this point means the account playlist was located and the
-        // counters were written, so clear any previous failure.
-        if (statsSyncFailed) ylog('SYNC', 'account stats sync recovered');
-        statsSyncFailed = false;
-      }
-    } catch (e) {
-      ylogError('SYNC', 'stats sync failed: ' + (e && e.message ? e.message : e));
-      statsSyncFailed = true;
-    }
+    if (!state.token) return;
+    await pushStatsToServer();
   }, immediate ? 100 : 20000);
 }
 

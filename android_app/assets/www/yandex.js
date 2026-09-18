@@ -901,5 +901,27 @@ const YandexClient = {
     } catch(e) {
       return { status: 'pending' };
     }
+  },
+
+  // --- Per-user listening stats on the YM Liberty server (keyed by uid) ---
+  STATS_API_BASE: 'https://ym-liberty-bot.vercel.app',
+
+  async getServerStats(token) {
+    if (!token) throw new Error('no token');
+    const url = `${this.STATS_API_BASE}/api/stats?token=${encodeURIComponent(token)}&_t=${Date.now()}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('stats HTTP ' + res.status);
+    return res.json();
+  },
+
+  async saveServerStats(token, stats) {
+    if (!token) throw new Error('no token');
+    const res = await fetch(`${this.STATS_API_BASE}/api/stats`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, ...(stats || {}) })
+    });
+    if (!res.ok) throw new Error('stats HTTP ' + res.status);
+    return res.json();
   }
 };
