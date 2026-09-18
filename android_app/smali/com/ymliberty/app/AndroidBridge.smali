@@ -443,3 +443,157 @@
     const/4 v0, 0x0
     return v0
 .end method
+
+# Enqueue a track for download through the system DownloadManager.
+#
+#   p1 url       https source of the audio payload
+#   p2 fileName  sanitized display name, e.g. "Artist - Title.mp3"
+#   p3 mimeType  "audio/mpeg" or "audio/flac" (must not be null)
+#   p4 toCache   true  -> app-private external dir (never needs a permission)
+#                false -> public Music/ dir
+#
+# Returns true when the download was enqueued. DownloadManager owns the HTTP
+# transfer and posts its own progress notification, so there is no progress
+# callback back into JS on purpose.
+#
+# On API < 29 the public Music/ dir requires WRITE_EXTERNAL_STORAGE, which this
+# app does not declare. Rather than fail, that case falls back to the
+# app-private dir so the file still lands on the device. API 29+ needs no
+# permission for a DownloadManager write into public storage.
+.method public downloadTrack(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)Z
+    .registers 10
+
+    :try_start_0
+    if-eqz p1, :cond_fail
+
+    if-eqz p2, :cond_fail
+
+    if-eqz p3, :cond_fail
+
+    # The file name comes from a track title, so it is untrusted: a "/" or ".."
+    # would let a caller escape the destination directory.
+    const-string v0, "/"
+
+    invoke-virtual {p2, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+
+    move-result v0
+
+    if-nez v0, :cond_fail
+
+    const-string v0, ".."
+
+    invoke-virtual {p2, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
+
+    move-result v0
+
+    if-nez v0, :cond_fail
+
+    const-string v0, "https://"
+
+    invoke-virtual {p1, v0}, Ljava/lang/String;->startsWith(Ljava/lang/String;)Z
+
+    move-result v0
+
+    if-eqz v0, :cond_fail
+
+    invoke-static {p1}, Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;
+
+    move-result-object v0
+
+    iget-object v1, p0, Lcom/ymliberty/app/AndroidBridge;->mContext:Landroid/content/Context;
+
+    const-string v2, "download"
+
+    invoke-virtual {v1, v2}, Landroid/content/Context;->getSystemService(Ljava/lang/String;)Ljava/lang/Object;
+
+    move-result-object v2
+
+    check-cast v2, Landroid/app/DownloadManager;
+
+    new-instance v3, Landroid/app/DownloadManager$Request;
+
+    invoke-direct {v3, v0}, Landroid/app/DownloadManager$Request;-><init>(Landroid/net/Uri;)V
+
+    invoke-virtual {v3, p2}, Landroid/app/DownloadManager$Request;->setTitle(Ljava/lang/CharSequence;)Landroid/app/DownloadManager$Request;
+
+    invoke-virtual {v3, p2}, Landroid/app/DownloadManager$Request;->setDescription(Ljava/lang/CharSequence;)Landroid/app/DownloadManager$Request;
+
+    invoke-virtual {v3, p3}, Landroid/app/DownloadManager$Request;->setMimeType(Ljava/lang/String;)Landroid/app/DownloadManager$Request;
+
+    # VISIBILITY_VISIBLE_NOTIFY_COMPLETED (1). v0 is a free local here, reused so
+    # v4 stays available for the DIRECTORY_MUSIC string below.
+    const/4 v0, 0x1
+
+    invoke-virtual {v3, v0}, Landroid/app/DownloadManager$Request;->setNotificationVisibility(I)Landroid/app/DownloadManager$Request;
+
+    sget-object v4, Landroid/os/Environment;->DIRECTORY_MUSIC:Ljava/lang/String;
+
+    # toCache (p4) true -> app-private external dir, which needs no permission on
+    # any API and survives until the user clears app data.
+    if-nez p4, :cond_cache
+
+    # toCache false -> public Music/. On API 29+ (scoped storage) DownloadManager
+    # may write there without any permission, so go straight to it.
+    sget v0, Landroid/os/Build$VERSION;->SDK_INT:I
+
+    const/16 v1, 0x1d
+
+    if-ge v0, v1, :cond_public
+
+    # API < 29 still needs WRITE_EXTERNAL_STORAGE for the public dir. If it was
+    # not granted, fall back to the private dir instead of failing the download.
+    # checkSelfPermission returns 0 for GRANTED and -1 for DENIED.
+    iget-object v0, p0, Lcom/ymliberty/app/AndroidBridge;->mContext:Landroid/content/Context;
+
+    const-string v1, "android.permission.WRITE_EXTERNAL_STORAGE"
+
+    invoke-virtual {v0, v1}, Landroid/content/Context;->checkSelfPermission(Ljava/lang/String;)I
+
+    move-result v0
+
+    if-nez v0, :cond_private_fallback
+
+    invoke-virtual {v3, v4, p2}, Landroid/app/DownloadManager$Request;->setDestinationInExternalPublicDir(Ljava/lang/String;Ljava/lang/String;)Landroid/app/DownloadManager$Request;
+
+    goto :cond_enqueue
+
+    :cond_private_fallback
+    iget-object v1, p0, Lcom/ymliberty/app/AndroidBridge;->mContext:Landroid/content/Context;
+
+    invoke-virtual {v3, v1, v4, p2}, Landroid/app/DownloadManager$Request;->setDestinationInExternalFilesDir(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)Landroid/app/DownloadManager$Request;
+
+    goto :cond_enqueue
+
+    :cond_public
+    invoke-virtual {v3, v4, p2}, Landroid/app/DownloadManager$Request;->setDestinationInExternalPublicDir(Ljava/lang/String;Ljava/lang/String;)Landroid/app/DownloadManager$Request;
+
+    goto :cond_enqueue
+
+    :cond_cache
+    iget-object v1, p0, Lcom/ymliberty/app/AndroidBridge;->mContext:Landroid/content/Context;
+
+    invoke-virtual {v3, v1, v4, p2}, Landroid/app/DownloadManager$Request;->setDestinationInExternalFilesDir(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)Landroid/app/DownloadManager$Request;
+
+    :cond_enqueue
+    invoke-virtual {v2, v3}, Landroid/app/DownloadManager;->enqueue(Landroid/app/DownloadManager$Request;)J
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+
+    const/4 v0, 0x1
+
+    return v0
+
+    :catch_0
+    move-exception v0
+
+    const-string v1, "YMLiberty"
+
+    const-string v2, "downloadTrack failed"
+
+    invoke-static {v1, v2, v0}, Landroid/util/Log;->e(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I
+
+    :cond_fail
+    const/4 v0, 0x0
+
+    return v0
+.end method

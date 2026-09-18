@@ -326,8 +326,15 @@
 
     invoke-direct {v5}, Landroid/media/session/PlaybackState$Builder;-><init>()V
 
-    # Actions: 0x337 includes ACTION_SEEK_TO (256) + standard playback
-    const-wide/16 v6, 0x337
+    # Actions bitmask: PLAY|PAUSE|SKIP_PREV|SKIP_NEXT|SEEK_TO and friends.
+    # This was 0x337, which sets SKIP_TO_PREVIOUS (0x10) but NOT
+    # SKIP_TO_NEXT (0x40) - the two nibbles look nearly identical, so the next
+    # button was silently dropped. From API 33 SystemUI ignores the
+    # Notification.Action buttons entirely and derives the media controls from
+    # this mask alone, so the omission meant no "next track" control at all.
+    #   0x377 = 0x1 STOP | 0x2 PAUSE | 0x4 PLAY | 0x10 SKIP_PREV
+    #         | 0x20 FAST_FORWARD | 0x40 SKIP_NEXT | 0x100 SEEK_TO | 0x200 SET_RATING
+    const-wide/16 v6, 0x377
 
     invoke-virtual {v5, v6, v7}, Landroid/media/session/PlaybackState$Builder;->setActions(J)Landroid/media/session/PlaybackState$Builder;
 
@@ -1268,7 +1275,9 @@
 
     invoke-direct {v1}, Landroid/media/session/PlaybackState$Builder;-><init>()V
 
-    const-wide/16 v2, 0x337
+    # Must match the mask in updateNotification(): re-publishing 0x337 here
+    # would drop SKIP_TO_NEXT again on every seek.
+    const-wide/16 v2, 0x377
 
     invoke-virtual {v1, v2, v3}, Landroid/media/session/PlaybackState$Builder;->setActions(J)Landroid/media/session/PlaybackState$Builder;
 

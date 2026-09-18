@@ -904,24 +904,87 @@ const YandexClient = {
   },
 
   // --- Per-user listening stats on the YM Liberty server (keyed by uid) ---
+  //
+  // The server cannot resolve the uid itself: Yandex rejects requests coming
+  // from datacenter IPs (the bot runs on Vercel in fra1), which is why every
+  // other call in this client is made straight from the user's device. So the
+  // uid is resolved here, on-device, and sent as a plain identifier.
   STATS_API_BASE: 'https://ym-liberty-bot.vercel.app',
 
-  async getServerStats(token) {
-    if (!token) throw new Error('no token');
-    const url = `${this.STATS_API_BASE}/api/stats?token=${encodeURIComponent(token)}&_t=${Date.now()}`;
+  async getServerStats(uid) {
+    if (!uid) throw new Error('no uid');
+    const url = `${this.STATS_API_BASE}/api/stats?uid=${encodeURIComponent(uid)}&_t=${Date.now()}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('stats HTTP ' + res.status);
     return res.json();
   },
 
-  async saveServerStats(token, stats) {
-    if (!token) throw new Error('no token');
+  async saveServerStats(uid, stats) {
+    if (!uid) throw new Error('no uid');
     const res = await fetch(`${this.STATS_API_BASE}/api/stats`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, ...(stats || {}) })
+      body: JSON.stringify({ uid, ...(stats || {}) })
     });
     if (!res.ok) throw new Error('stats HTTP ' + res.status);
     return res.json();
+  },
+
+  // --- Lyrics ---
+  //
+  // Yandex serves lyrics in two steps:
+  //   1. GET tracks/{id}/lyrics?format=LRC&timeStamp=&sign= -> { downloadUrl }
+  //   2. GET {downloadUrl}                                  -> the LRC text
+  //
+  // The sign is base64(trackId + timeStamp + salt), with timeStamp in whole
+  // seconds. This is the scheme the official Android client uses (LyricsHttpApi
+  // + the sign helper in its decompiled code); the web client signs differently
+  // (HMAC-SHA256), so the Android one is what works with the mobile API host.
+  LYRICS_SALT: 'p93jhgh689SBReK6ghtw62',
+
+  // LRC gives timestamped lines; TEXT is the unsynchronized fallback.
+  async getLyrics(trackId, token, preferSync = true) {
+    if (!token || !trackId) return null;
+    const idStr = String(trackId);
+    const timeStamp = Math.floor(Date.now() / 1000);
+    // btoa is safe here: the signed string is digits + an ASCII salt.
+    const sign = btoa(idStr + timeStamp + this.LYRICS_SALT);
+    const format = preferSync ? 'LRC' : 'TEXT';
+
+    let info;
+    try {
+      const res = await fetch(
+        `https://api.music.yandex.net/tracks/${idStr}/lyrics?format=${format}&timeStamp=${timeStamp}&sign=${encodeURIComponent(sign)}`,
+        { headers: this.getHeaders(token) }
+      );
+      if (!res.ok) return null;
+      const data = await res.json();
+      info = data.result || null;
+    } catch (e) {
+      return null;
+    }
+    if (!info) return null;
+
+    // Retry with plain TEXT when this track has no synchronized lyrics at all.
+    if (preferSync && info.downloadUrl === undefined && !info.url) {
+      return this.getLyrics(trackId, token, false);
+    }
+
+    const downloadUrl = info.downloadUrl || info.url;
+    if (!downloadUrl) return null;
+
+    try {
+      const textRes = await fetch(downloadUrl);
+      if (!textRes.ok) return null;
+      const text = await textRes.text();
+      return {
+        lyricId: info.lyricId || info.externalLyricId || null,
+        writers: Array.isArray(info.writers) ? info.writers : [],
+        sync: format === 'LRC',
+        text
+      };
+    } catch (e) {
+      return null;
+    }
   }
 };

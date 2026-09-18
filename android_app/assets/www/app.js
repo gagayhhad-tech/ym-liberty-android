@@ -32,6 +32,11 @@ const dom = {
   fullTitle: document.getElementById('full-title'),
   fullArtist: document.getElementById('full-artist'),
   miniBtnNext: document.getElementById('mini-btn-next'),
+
+  // Lyrics
+  btnLyrics: document.getElementById('btn-lyrics'),
+  fullLyrics: document.getElementById('full-lyrics'),
+  fullLyricsLines: document.getElementById('full-lyrics-lines'),
   
   // Progress
   progressSlider: document.getElementById('progress-slider'),
@@ -92,8 +97,20 @@ const state = {
   vibeBatchId: null, // For fetching next vibe tracks
   vibeBatchByTrack: {}, // trackId -> batchId it was recommended in (correct feedback attribution)
   isFetchingVibe: false,
+  // Bumped on every mood-chip switch. A vibe fetch that started before the
+  // bump carries the old mood's recommendations, so its result is discarded
+  // instead of being appended behind the new queue.
+  moodRequestSeq: 0,
   currentTrack: null,
-  isPlaying: false
+  isPlaying: false,
+
+  // Lyrics panel state. lyricsOpen is a user preference that survives track
+  // changes; the rest describe the current track's loaded document.
+  lyricsOpen: false,
+  lyricsTrackId: null,
+  lyricsRequestSeq: 0,
+  lyricsLines: [],   // [{time, text}] sorted by time, or [] for plain text
+  lyricsActiveIndex: -1
 };
 
 function updatePlaybackContextHeader(subtitle, title) {
@@ -1131,6 +1148,7 @@ window.handleMediaSeek = function(posMs) {
     const percent = (activePlayer.currentTime / activePlayer.duration) * 100;
     if (dom.progressSlider) {
       dom.progressSlider.value = percent;
+      setSliderProgress(percent);
     }
     if (dom.miniProgress) {
       dom.miniProgress.style.width = `${percent}%`;
@@ -1361,6 +1379,7 @@ function restorePlaybackState() {
     }
     if (dom.progressSlider && duration > 0) {
       dom.progressSlider.value = (savedTime / duration) * 100;
+      setSliderProgress((savedTime / duration) * 100);
     }
     if (dom.miniProgress && duration > 0) {
       dom.miniProgress.style.width = `${(savedTime / duration) * 100}%`;
@@ -1409,7 +1428,10 @@ function updateTrackUI(trackInfo) {
   }
   
   // Instantly reset progress bar
-  if (dom.progressSlider) dom.progressSlider.value = 0;
+  if (dom.progressSlider) {
+    dom.progressSlider.value = 0;
+    setSliderProgress(0);
+  }
   if (dom.miniProgress) dom.miniProgress.style.width = '0%';
   if (dom.timeCurrent) dom.timeCurrent.textContent = "0:00";
   if (dom.timeTotal) dom.timeTotal.textContent = "0:00";
@@ -1455,6 +1477,10 @@ function updateTrackUI(trackInfo) {
   updateMediaSession(trackInfo);
   updatePlaybackContextHeader();
   savePlaybackState();
+
+  // Fetch this track's lyrics and decide whether the button may be shown.
+  // Fire-and-forget: a slow or missing response must never delay the UI.
+  if (typeof loadLyricsForCurrentTrack === 'function') loadLyricsForCurrentTrack();
 }
 
 // Like Button Logic
@@ -1515,11 +1541,23 @@ if (dom.btnLike) {
   });
 }
 
+// True only when the plain Wave station owns the player. Must stay in step
+// with the guard in startVibe(): that function decides whether a click toggles
+// playback or starts a fresh session, and the icon has to promise the same
+// thing. A track from a library/album/playlist must not paint the Wave button
+// as "now playing".
+function isPlainVibePlaying() {
+  return state.queueMode === 'vibe'
+    && (!state.currentStation || state.currentStation === 'user:onyourwave')
+    && state.queue.length > 0
+    && state.queueIndex < state.queue.length;
+}
+
 function updatePlayButtons() {
     const icon = state.isPlaying ? 'bi-pause-fill' : 'bi-play-fill';
     dom.miniBtnPlay.innerHTML = `<i class="bi ${icon}"></i>`;
     dom.fullBtnPlay.innerHTML = `<i class="bi ${icon}"></i>`;
-    dom.vibePlayBtn.innerHTML = `<i class="bi ${icon}"></i>`;
+    dom.vibePlayBtn.innerHTML = `<i class="bi ${state.isPlaying && isPlainVibePlaying() ? 'bi-pause-fill' : 'bi-play-fill'}"></i>`;
 
     // Dynamic 3D Cover Pop / Recede on Play/Pause
     if (dom.fullCover) {
@@ -1603,15 +1641,28 @@ function formatTime(seconds) {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
+// The fullscreen slider is a bare <input type=range> with
+// -webkit-appearance:none, which strips Blink's built-in played-segment fill.
+// The CSS paints that fill from a --progress custom property instead, so every
+// writer of slider.value has to publish the percentage here too — otherwise
+// the thumb moves but the track behind it stays flat.
+function setSliderProgress(percent) {
+  if (!dom.progressSlider) return;
+  const p = Number(percent);
+  const clamped = Number.isFinite(p) ? Math.min(100, Math.max(0, p)) : 0;
+  dom.progressSlider.style.setProperty('--progress', clamped + '%');
+}
+
 function updateProgress() {
   if (state.isPlaying && activePlayer && activePlayer.duration && !isNaN(activePlayer.duration)) {
     checkAndTriggerCrossfade();
     const current = activePlayer.currentTime || 0;
     const duration = activePlayer.duration;
     const percent = (current / duration) * 100;
-    
+
     if (dom.progressSlider && !state.isDraggingSlider) {
       dom.progressSlider.value = percent;
+      setSliderProgress(percent);
     }
     if (dom.miniProgress) {
       dom.miniProgress.style.width = `${percent}%`;
@@ -1624,6 +1675,8 @@ function updateProgress() {
     }
     if (typeof recordListeningProgress === 'function') recordListeningProgress();
     updateMediaSessionPosition();
+    // No-ops unless the lyrics panel is open, so the rAF cost is one branch.
+    if (typeof updateLyricsHighlight === 'function') updateLyricsHighlight();
 
     // savePlaybackState() throttles itself to 1.5 s, but calling it from the
     // animation loop still ran a full JSON.stringify many times per second.
@@ -1642,6 +1695,9 @@ requestAnimationFrame(updateProgress);
 if (dom.progressSlider) {
   dom.progressSlider.addEventListener('input', (e) => {
     state.isDraggingSlider = true;
+    // Follow the thumb while scrubbing: updateProgress deliberately skips the
+    // slider during a drag, so without this the fill would freeze mid-gesture.
+    setSliderProgress(e.target.value);
     const duration = activePlayer?.duration;
     if (duration && !isNaN(duration)) {
       dom.timeCurrent.textContent = formatTime((e.target.value / 100) * duration);
@@ -1806,19 +1862,25 @@ async function startVibe() {
 async function fetchMoreVibeTracks() {
   if (state.isFetchingVibe) return;
   state.isFetchingVibe = true;
+  // Captured before the awaits: if the user switches the mood while this
+  // refill is in flight, state.moodRequestSeq moves on and every track below
+  // belongs to the previous mood. Appending them would undo the switch.
+  const requestSeq = state.moodRequestSeq;
   try {
     const station = state.currentStation || 'user:onyourwave';
     // Use the track that actually played/is playing (registered with Rotor feedback)
     const currentTr = state.currentTrack || state.queue[state.queueIndex];
     const trackForQueue = currentTr ? currentTr.id : null;
     let data = await YandexClient.getVibe(state.token, trackForQueue, station);
-    
+    if (requestSeq !== state.moodRequestSeq) return;
+
     const existingIds = new Set(state.queue.map(t => String(t.id)));
     let freshTracks = dedupeVibeBatch(data && data.tracks, existingIds);
-    
+
     // If Rotor returned duplicates, request fresh recommendation batch without queue
     if (freshTracks.length === 0) {
       data = await YandexClient.getVibe(state.token, null, station);
+      if (requestSeq !== state.moodRequestSeq) return;
       freshTracks = dedupeVibeBatch(data && data.tracks, existingIds);
     }
 
@@ -1826,9 +1888,10 @@ async function fetchMoreVibeTracks() {
     if (freshTracks.length === 0) {
       const anchor = state.queue[Math.max(0, state.queueIndex - 5)];
       data = await YandexClient.getVibe(state.token, anchor ? anchor.id : null, station);
+      if (requestSeq !== state.moodRequestSeq) return;
       freshTracks = dedupeVibeBatch(data && data.tracks, existingIds);
     }
-    
+
     if (freshTracks.length > 0) {
       rememberVibeBatch(freshTracks, data && data.batchId);
       state.queue = state.queue.concat(freshTracks);
@@ -1862,7 +1925,17 @@ async function startTrackVibe(seedTrack) {
     artistName = rawTrack.artists.map(a => a.name || a).join(', ');
   }
 
-  activePlayer.pause();
+  // When the seed is the track that is playing right now, playback must keep
+  // running: pausing for the network round-trip and then playQueueTrack()
+  // restarted it from 0:00, which is exactly what "Волна по треку" used to do
+  // to the user's current position. Build the new queue underneath the live
+  // audio instead and let the natural 'ended' handler advance into it.
+  const seedIsLive = state.isPlaying && state.currentTrack
+    && String(state.currentTrack.id) === trackId;
+
+  if (!seedIsLive) {
+    activePlayer.pause();
+  }
   state.queueMode = 'vibe';
   state.currentStation = 'track:' + trackId;
   updatePlaybackContextHeader('ВОЛНА ПО ТРЕКУ', trackTitle);
@@ -1884,7 +1957,9 @@ async function startTrackVibe(seedTrack) {
     const isExplicit = Boolean(seedTrack.explicit || rawTrack.explicit || rawTrack.contentWarning === 'explicit');
     const isLiberty = Boolean(seedTrack.isLiberty || rawTrack.isLiberty);
 
-    const initialTrack = {
+    // Reuse the live track object so the player keeps its identity (cover,
+    // raw API object) while the queue is rebuilt around it.
+    const initialTrack = seedIsLive ? state.currentTrack : {
       id: trackId,
       title: trackTitle,
       artists: artistName,
@@ -1901,14 +1976,21 @@ async function startTrackVibe(seedTrack) {
     state.queue = [initialTrack, ...waveTracks];
     state.queueIndex = 0;
 
-    sendFeedback('radioStarted', trackId, 0);
-    playQueueTrack(initialTrack);
+    if (seedIsLive) {
+      // Don't re-announce a session/track that Rotor already knows is playing;
+      // just make sure the first real Wave track is ready to take over.
+      updatePlayButtons();
+      if (typeof preloadNextTrack === 'function') preloadNextTrack();
+    } else {
+      sendFeedback('radioStarted', trackId, 0);
+      playQueueTrack(initialTrack);
+    }
   } catch (err) {
     console.error('Error starting track wave:', err);
     showToast('Ошибка запуска Волны по треку');
     state.queue = [seedTrack];
     state.queueIndex = 0;
-    playQueueTrack(seedTrack);
+    if (!seedIsLive) playQueueTrack(seedTrack);
   }
 }
 
@@ -2372,6 +2454,206 @@ dom.btnClosePlayer.addEventListener('click', () => {
   dom.fullPlayer.classList.add('translateY-100');
 });
 
+// ==========================================
+// Synchronized Lyrics
+// ==========================================
+
+// Parse an LRC document into [{time, text}] sorted by time. LRC lines look like
+//   [mm:ss.xx]text
+// and may carry several timestamps for one line. Everything else ([ar:...],
+// [ti:...] metadata tags, bare lines without a timestamp) is handled too: a tag
+// renders as metadata, and a line with no timestamp at all means the track only
+// has plain text — the caller then falls back to unsynchronized rendering.
+function parseLrc(text) {
+  if (!text || typeof text !== 'string') return [];
+  const lines = [];
+  let sawTimestamp = false;
+
+  text.split(/\r?\n/).forEach(raw => {
+    const line = raw.trim();
+    if (!line) return;
+
+    // Pull every [..] prefix off the front of the line.
+    const stamps = [];
+    let rest = line;
+    let m;
+    const stampRe = /^\[([^\]]*)\]/;
+    while ((m = rest.match(stampRe)) !== null) {
+      const inner = m[1];
+      rest = rest.slice(m[0].length);
+      // Time stamps are [mm:ss.xx] or [mm:ss]; metadata is [key:value].
+      const time = /^\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?$/.test(inner) ? lrcTimeToSeconds(inner) : null;
+      if (time !== null) {
+        stamps.push(time);
+        sawTimestamp = true;
+      } else if (/^\w+:/.test(inner)) {
+        // [ar:Artist] / [ti:Title] / [al:Album] — metadata, skip the value.
+        lines.push({ time: null, text: '', meta: inner });
+      }
+    }
+    rest = rest.trim();
+
+    if (stamps.length > 0) {
+      stamps.forEach(t => lines.push({ time: t, text: rest }));
+    } else if (rest) {
+      lines.push({ time: null, text: rest });
+    }
+  });
+
+  if (!sawTimestamp) return [];
+  lines.sort((a, b) => (a.time === null ? -1 : b.time === null ? 1 : a.time - b.time));
+  return lines;
+}
+
+function lrcTimeToSeconds(str) {
+  const parts = str.replace('.', ':').split(':');
+  if (parts.length < 2) return null;
+  const mins = parseInt(parts[0], 10) || 0;
+  const secs = parseFloat(parts[1]) || 0;
+  return mins * 60 + secs;
+}
+
+// Render the current state.lyricsLines into the panel. Synchronized lines get
+// an index attribute so the playback loop can find and highlight the active one
+// without re-rendering the whole list on every frame.
+function renderLyrics() {
+  if (!dom.fullLyricsLines) return;
+  dom.fullLyricsLines.innerHTML = '';
+  state.lyricsActiveIndex = -1;
+
+  if (!state.lyricsLines || state.lyricsLines.length === 0) {
+    dom.fullLyricsLines.innerHTML = `<div class="lyrics-empty"><i class="bi bi-music-note-beamed"></i><span>Текст недоступен для этого трека</span></div>`;
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  state.lyricsLines.forEach((ln, i) => {
+    const div = document.createElement('div');
+    if (ln.meta) {
+      div.className = 'lyric-line meta';
+      div.textContent = ln.meta;
+    } else if (ln.text) {
+      div.className = 'lyric-line';
+      div.dataset.index = String(i);
+      div.textContent = ln.text;
+    } else {
+      div.className = 'lyric-line empty';
+    }
+    frag.appendChild(div);
+  });
+  dom.fullLyricsLines.appendChild(frag);
+}
+
+async function loadLyricsForCurrentTrack() {
+  const track = state.currentTrack;
+  if (!track || !track.id || !state.token) {
+    if (dom.btnLyrics) dom.btnLyrics.classList.add('hidden');
+    return;
+  }
+  const trackId = String(track.id);
+
+  // Show the panel as loading only if the user has lyrics open; the fetch
+  // happens regardless so the availability check can hide the button.
+  const seq = ++state.lyricsRequestSeq;
+  if (dom.btnLyrics) dom.btnLyrics.classList.add('hidden');
+
+  let result = null;
+  try {
+    result = await YandexClient.getLyrics(trackId, state.token, true);
+  } catch (e) {
+    result = null;
+  }
+  // A newer track started while this was in flight — drop the stale result.
+  if (seq !== state.lyricsRequestSeq) return;
+  if (String(state.currentTrack?.id) !== trackId) return;
+
+  state.lyricsTrackId = trackId;
+
+  if (!result || !result.text) {
+    state.lyricsLines = [];
+    if (dom.btnLyrics) dom.btnLyrics.classList.add('hidden');
+    if (state.lyricsOpen) renderLyrics();
+    return;
+  }
+
+  // Synchronized LRC parses to timed lines; if the track only had plain TEXT
+  // (no timestamps), fall back to one line per paragraph, unhighlighted.
+  const parsed = result.sync ? parseLrc(result.text) : [];
+  if (parsed.length > 0) {
+    state.lyricsLines = parsed;
+  } else {
+    state.lyricsLines = result.text
+      .split(/\r?\n/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(s => ({ time: null, text: s }));
+  }
+
+  if (dom.btnLyrics) dom.btnLyrics.classList.remove('hidden');
+  if (state.lyricsOpen) {
+    renderLyrics();
+    updateLyricsHighlight();
+  }
+}
+
+function toggleLyrics(force) {
+  const willOpen = typeof force === 'boolean' ? force : !state.lyricsOpen;
+  state.lyricsOpen = willOpen;
+  if (!dom.fullLyrics || !dom.fullCover) return;
+
+  if (willOpen) {
+    dom.fullLyrics.classList.remove('hidden');
+    dom.fullCover.style.opacity = '0';
+    if (btnLyricsIcon) btnLyricsIcon.className = 'bi bi-x-lg';
+    renderLyrics();
+    updateLyricsHighlight();
+  } else {
+    dom.fullLyrics.classList.add('hidden');
+    dom.fullCover.style.opacity = '';
+    if (btnLyricsIcon) btnLyricsIcon.className = 'bi bi-music-note-text';
+  }
+}
+
+let btnLyricsIcon = null;
+if (dom.btnLyrics) {
+  btnLyricsIcon = dom.btnLyrics.querySelector('i');
+  dom.btnLyrics.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleLyrics();
+  });
+}
+
+// Highlight the line whose timestamp has passed, and keep it scrolled into
+// view. Called from the playback loop; cheap because it only touches the DOM
+// when the active index actually changes.
+function updateLyricsHighlight() {
+  if (!state.lyricsOpen || !state.lyricsLines || state.lyricsLines.length === 0) return;
+  if (!activePlayer || typeof activePlayer.currentTime !== 'number') return;
+
+  const now = activePlayer.currentTime;
+  let idx = -1;
+  for (let i = 0; i < state.lyricsLines.length; i++) {
+    const t = state.lyricsLines[i].time;
+    if (t !== null && t <= now) idx = i;
+  }
+  if (idx === state.lyricsActiveIndex || idx < 0) return;
+  state.lyricsActiveIndex = idx;
+
+  if (!dom.fullLyricsLines) return;
+  const nodes = dom.fullLyricsLines.querySelectorAll('.lyric-line[data-index]');
+  nodes.forEach(n => n.classList.remove('active'));
+  // data-index matches the position in lyricsLines for sung lines, but the node
+  // list skips meta/empty entries, so find by attribute rather than by position.
+  const activeNode = dom.fullLyricsLines.querySelector(`.lyric-line[data-index="${idx}"]`);
+  if (activeNode) {
+    activeNode.classList.add('active');
+    try {
+      activeNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (e) {}
+  }
+}
+
+
 // Click artist name in full player -> go to artist profile
 if (dom.fullArtist) {
   dom.fullArtist.style.cursor = 'pointer';
@@ -2537,6 +2819,95 @@ if (libSearch) {
   });
 }
 
+// --- Track Downloads ---
+//
+// The native side hands the URL to the system DownloadManager, which owns the
+// transfer and posts its own progress notification. So there is no progress
+// callback here on purpose — the only feedback this layer owes the user is that
+// the request was accepted (or why it was not).
+
+function formatDownloadQualityLabel() {
+  const q = String(localStorage.getItem('ym_audio_quality') || '320');
+  return q === '1000' ? 'FLAC' : `${q} kbps`;
+}
+
+// Filenames come from track titles, which can carry any character. Strip the
+// ones that are illegal in a path or that the native guard rejects.
+function buildDownloadFileName(artist, title, ext) {
+  const clean = (s) => String(s || '').replace(/[\\/:*?"<>|\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim();
+  const a = clean(artist);
+  const t = clean(title) || 'track';
+  const base = a ? `${a} - ${t}` : t;
+  return `${base.slice(0, 120)}.${ext}`;
+}
+
+// The stream URL encodes the codec in its path (get-flac vs get-mp3), which is
+// the only reliable signal — Liberty DB entries are always MP3.
+function detectAudioFormat(streamUrl) {
+  const url = String(streamUrl || '');
+  if (url.includes('/get-flac/') || url.includes('.flac')) {
+    return { ext: 'flac', mime: 'audio/flac' };
+  }
+  return { ext: 'mp3', mime: 'audio/mpeg' };
+}
+
+async function downloadTrackToDevice(track, artistName, trackId, toCache) {
+  if (!trackId) return;
+  if (!state.token) {
+    showToast('Сначала войдите в аккаунт', 'bi-exclamation-circle');
+    return;
+  }
+  if (!(window.AndroidBridge && typeof window.AndroidBridge.downloadTrack === 'function')) {
+    showToast('Скачивание доступно только в приложении', 'bi-exclamation-circle');
+    return;
+  }
+
+  showToast('Получаю ссылку на аудио…', 'bi-cloud-arrow-down');
+
+  let streamUrl;
+  try {
+    const data = await fetchTrackStream(trackId);
+    streamUrl = data && data.streamUrl;
+  } catch (e) {
+    console.error('Download: could not resolve stream URL', e);
+    showToast('Не удалось получить ссылку на трек', 'bi-wifi-off');
+    return;
+  }
+
+  if (!streamUrl) {
+    showToast('Трек недоступен для скачивания', 'bi-exclamation-circle');
+    return;
+  }
+  // The native guard only accepts https; a relative URL would be rejected there.
+  if (!/^https:\/\//i.test(streamUrl)) {
+    showToast('Не удалось начать скачивание', 'bi-exclamation-circle');
+    return;
+  }
+
+  const { ext, mime } = detectAudioFormat(streamUrl);
+  const title = track.title || track.track?.title || 'Трек';
+  const artist = artistName || (typeof track.artists === 'string' ? track.artists : '') || '';
+  const fileName = buildDownloadFileName(artist, title, ext);
+
+  let ok = false;
+  try {
+    ok = Boolean(window.AndroidBridge.downloadTrack(streamUrl, fileName, mime, toCache));
+  } catch (e) {
+    console.error('Download: bridge call failed', e);
+    ok = false;
+  }
+
+  if (ok) {
+    showToast(
+      toCache ? `Скачиваю в кэш: ${fileName}` : `Скачиваю в «Музыку»: ${fileName}`,
+      'bi-download',
+      'success'
+    );
+  } else {
+    showToast('Скачивание не началось', 'bi-exclamation-triangle');
+  }
+}
+
 // --- Action Sheet (Three Dots) & Playlist Chooser ---
 let activeMenuTrack = null;
 
@@ -2587,6 +2958,36 @@ function openActionSheet(track) {
     asBtnTrackVibe.onclick = () => {
       closeActionSheet();
       startTrackVibe(track);
+    };
+  }
+
+  // Downloads. Both buttons share one handler; only the destination differs.
+  // The label reflects the quality the user picked in settings, because
+  // getStreamUrl already honours ym_audio_quality — so a lossless user gets a
+  // FLAC file and everyone else an MP3 at their chosen bitrate.
+  const asBtnDownload = document.getElementById('as-btn-download');
+  const asBtnDownloadCache = document.getElementById('as-btn-download-cache');
+  const asDownloadText = document.getElementById('as-download-text');
+
+  const isNative = window.AndroidBridge && typeof window.AndroidBridge.downloadTrack === 'function';
+  if (asDownloadText) {
+    asDownloadText.textContent = isNative
+      ? `Скачать трек (${formatDownloadQualityLabel()})`
+      : 'Скачать трек (только в приложении)';
+  }
+  const showDownloads = isNative && Boolean(trackId);
+  if (asBtnDownload) asBtnDownload.style.display = showDownloads ? 'flex' : 'none';
+  if (asBtnDownloadCache) asBtnDownloadCache.style.display = showDownloads ? 'flex' : 'none';
+
+  if (showDownloads) {
+    const startDownload = (toCache) => downloadTrackToDevice(track, artistName, trackId, toCache);
+    asBtnDownload.onclick = () => {
+      closeActionSheet();
+      startDownload(false);
+    };
+    asBtnDownloadCache.onclick = () => {
+      closeActionSheet();
+      startDownload(true);
     };
   }
 
@@ -3047,17 +3448,39 @@ async function syncWaveStatsFromAccount() {
   await syncWaveHistoryPlaylist();
 }
 
+// The uid is resolved on-device because Yandex rejects the server's datacenter
+// IP — the bot cannot call account/status itself. Prefer the value already
+// fetched during login; fall back to a device-side lookup (which caches).
+async function resolveStatsUid() {
+  const fromUser = state.user && (state.user.uid || state.user.id);
+  if (fromUser) return String(fromUser);
+  if (YandexClient.cachedUid) return String(YandexClient.cachedUid);
+  if (!state.token || !YandexClient.getUid) return null;
+  try {
+    const uid = await YandexClient.getUid(state.token);
+    return uid ? String(uid) : null;
+  } catch (e) {
+    ylogError('SYNC', 'could not resolve uid on device: ' + (e && e.message ? e.message : e));
+    return null;
+  }
+}
+
 async function syncStatsFromServer() {
   if (!state.token || !YandexClient.getServerStats) {
     ylog('SYNC', 'skipped: no token or stats client unavailable');
     return;
   }
+  const uid = await resolveStatsUid();
+  if (!uid) {
+    ylog('SYNC', 'skipped: uid unavailable');
+    return;
+  }
   try {
-    const remote = await YandexClient.getServerStats(state.token);
+    const remote = await YandexClient.getServerStats(uid);
     if (!remote || typeof remote !== 'object' || remote.error) {
       // An empty object means the user simply has no stats yet: push the local
       // counters up instead of treating it as a sync failure.
-      await pushStatsToServer();
+      await pushStatsToServer(uid);
       return;
     }
 
@@ -3075,7 +3498,7 @@ async function syncStatsFromServer() {
 
     // The local copy may have been ahead (e.g. listening happened offline), so
     // write the merged result back rather than only pulling.
-    await pushStatsToServer();
+    await pushStatsToServer(uid);
 
     if (statsSyncFailed) ylog('SYNC', 'server stats sync recovered');
     statsSyncFailed = false;
@@ -3085,11 +3508,16 @@ async function syncStatsFromServer() {
   }
 }
 
-async function pushStatsToServer() {
+async function pushStatsToServer(uidHint) {
   if (!state.token || !YandexClient.saveServerStats) return false;
+  const uid = uidHint || await resolveStatsUid();
+  if (!uid) {
+    ylog('SYNC', 'write skipped: uid unavailable');
+    return false;
+  }
   try {
     const stats = getWaveStats();
-    await YandexClient.saveServerStats(state.token, {
+    await YandexClient.saveServerStats(uid, {
       totalTracks: stats.totalTracks || 0,
       totalSeconds: stats.totalSeconds || 0,
       todayTracks: stats.todayTracks || 0,
@@ -3336,34 +3764,32 @@ function initVibeMoodChips() {
       if (state.queueMode === 'vibe' && (!state.currentStation || state.currentStation === 'user:onyourwave')) {
         updatePlaybackContextHeader('ИГРАЕТ ИЗ ВОЛНЫ', moodName === 'Всё подряд' ? 'Моя Волна' : `Моя Волна • ${moodName}`);
 
-        // Бесшовно перестраиваем очередь под новое настроение
-        if (state.isFetchingVibe) {
-          console.warn('Vibe fetch already in progress; skipping mood queue rebuild');
-          return;
-        }
-        state.isFetchingVibe = true;
+        // Start a track from the new mood right away. The old code kept the
+        // currently playing (old-mood) track at the head of the rebuilt queue
+        // and only preloaded, so the new mood was first heard after the rest of
+        // the queue drained — "takes effect after several songs".
+        //
+        // A background refill may be in flight with the OLD settings. Instead
+        // of bailing out, mark its result stale: fetchMoreVibeTracks appends to
+        // state.queue, which would push old-mood tracks back in behind the new
+        // ones.
+        const moodRequestId = ++state.moodRequestSeq;
+        state.isFetchingVibe = false;
         try {
           const data = await YandexClient.getVibe(state.token, null, 'user:onyourwave');
+          if (moodRequestId !== state.moodRequestSeq) return; // a newer mood won
           if (data && data.tracks && data.tracks.length > 0) {
-            const currentTr = state.queue[state.queueIndex];
-            const excluded = new Set();
-            if (currentTr) excluded.add(String(currentTr.id));
-            // New mood, but the anti-loop history still applies.
-            let nextTracks = dedupeVibeBatch(data.tracks, excluded, 100);
+            let nextTracks = dedupeVibeBatch(data.tracks, null, 100);
             rememberVibeBatch(nextTracks, data.batchId);
-            if (currentTr) {
-              nextTracks = [currentTr, ...nextTracks.filter(t => String(t.id) !== String(currentTr.id))];
-            }
+            if (nextTracks.length === 0) return;
             state.queue = nextTracks;
             state.queueIndex = 0;
-            if (typeof preloadNextTrack === 'function') {
-              preloadNextTrack();
-            }
+            const firstTrack = state.queue[0];
+            sendFeedback('radioStarted', firstTrack.id, 0);
+            playQueueTrack(firstTrack);
           }
         } catch (err) {
           console.warn('Failed to reload vibe queue for new mood:', err);
-        } finally {
-          state.isFetchingVibe = false;
         }
       }
     });
@@ -3664,8 +4090,8 @@ function getAppVersionInfo() {
   // in AndroidManifest.xml. They previously read 4 / '1.0.3', which made a
   // failed bridge lookup silently claim an ancient version and could hide or
   // fake an update.
-  let versionCode = 21;
-  let versionName = '1.1.4';
+  let versionCode = 22;
+  let versionName = '1.1.5';
   if (window.AndroidBridge) {
     if (typeof window.AndroidBridge.getVersionCode === 'function') {
       try {
@@ -4292,7 +4718,7 @@ function initSwipeGestures() {
     let swipeDirection = null; // 'v' or 'h'
 
     fullPlayer.addEventListener('touchstart', (e) => {
-      if (e.target.closest('#progress-slider') || e.target.closest('.full-controls') || e.target.closest('#btn-track-menu')) {
+      if (e.target.closest('#progress-slider') || e.target.closest('.full-controls') || e.target.closest('#btn-track-menu') || e.target.closest('#full-lyrics')) {
         return;
       }
       startX = e.touches[0].clientX;

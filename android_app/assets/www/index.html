@@ -512,11 +512,17 @@
         <span class="context-subtitle" id="full-context-type">ИГРАЕТ ИЗ ВОЛНЫ</span>
         <span class="context-title" id="full-context-title">Моя Волна</span>
       </div>
-      <button id="btn-track-menu" class="icon-btn"><i class="bi bi-three-dots"></i></button>
+      <div class="full-player-header-actions">
+        <button id="btn-lyrics" class="icon-btn hidden" aria-label="Текст песни"><i class="bi bi-music-note-text"></i></button>
+        <button id="btn-track-menu" class="icon-btn"><i class="bi bi-three-dots"></i></button>
+      </div>
     </div>
-    
+
     <div class="full-cover-container">
       <img id="full-cover" src="favicon.png" alt="Cover" class="full-cover">
+      <div id="full-lyrics" class="full-lyrics hidden">
+        <div id="full-lyrics-lines" class="full-lyrics-lines"></div>
+      </div>
     </div>
     
     <div class="full-info">
@@ -661,6 +667,8 @@
           <button class="as-btn" id="as-btn-track-vibe" style="background: transparent; border: none; color: #fff; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-broadcast" style="font-size: 18px; color: var(--accent-color, #fc3f1d);"></i> <span>Моя Волна по треку</span></button>
           <button class="as-btn" id="as-btn-like" style="background: transparent; border: none; color: #fff; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-heart" style="font-size: 18px;"></i> <span id="as-like-text">Добавить в коллекцию</span></button>
           <button class="as-btn" id="as-btn-playlist" style="background: transparent; border: none; color: #fff; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-music-note-list" style="font-size: 18px;"></i> <span>Добавить в плейлист</span></button>
+          <button class="as-btn" id="as-btn-download" style="background: transparent; border: none; color: #fff; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-download" style="font-size: 18px;"></i> <span id="as-download-text">Скачать трек</span></button>
+          <button class="as-btn" id="as-btn-download-cache" style="background: transparent; border: none; color: #fff; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-hdd" style="font-size: 18px;"></i> <span>Скачать в кэш приложения</span></button>
           <button class="as-btn" id="as-btn-share" style="background: transparent; border: none; color: #fff; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-link-45deg" style="font-size: 20px;"></i> <span>Скопировать ссылку</span></button>
           <button class="as-btn" id="as-btn-artist" style="background: transparent; border: none; color: #fff; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-person" style="font-size: 18px;"></i> <span>Перейти к артисту</span></button>
           <button class="as-btn" id="as-btn-report" style="background: transparent; border: none; color: #ffb444; text-align: left; padding: 12px; font-size: 15px; display: flex; align-items: center; gap: 14px; border-radius: 8px; cursor: pointer;"><i class="bi bi-shield-exclamation" style="font-size: 18px;"></i> <span id="as-report-text">Сообщить о цензуре</span></button>
