@@ -137,6 +137,17 @@
 
     sput-object p0, Lcom/ymliberty/app/MainActivity;->sInstance:Lcom/ymliberty/app/MainActivity;
 
+    # Open the persistent log file as early as possible so a failure during
+    # startup is recorded. Logs go to
+    #   /sdcard/Android/data/com.ymliberty.app/files/ymliberty-log.txt
+    invoke-static {p0}, Lcom/ymliberty/app/YMLogger;->init(Landroid/content/Context;)V
+
+    const-string v0, "APP"
+
+    const-string v1, "MainActivity.onCreate"
+
+    invoke-static {v0, v1}, Lcom/ymliberty/app/YMLogger;->log(Ljava/lang/String;Ljava/lang/String;)V
+
     # Register CrashHandler
     invoke-static {}, Ljava/lang/Thread;->getDefaultUncaughtExceptionHandler()Ljava/lang/Thread$UncaughtExceptionHandler;
 
@@ -362,6 +373,12 @@
     const-string v1, "file:///android_asset/www/index.html"
 
     invoke-virtual {v0, v1}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
+
+    const-string v0, "APP"
+
+    const-string v1, "WebView loaded index.html"
+
+    invoke-static {v0, v1}, Lcom/ymliberty/app/YMLogger;->log(Ljava/lang/String;Ljava/lang/String;)V
 
     return-void
 .end method

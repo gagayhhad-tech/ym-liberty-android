@@ -23,38 +23,70 @@
 
 # virtual methods
 .method public uncaughtException(Ljava/lang/Thread;Ljava/lang/Throwable;)V
-    .registers 7
+    .registers 8
 
     :try_start_0
     invoke-static {p2}, Landroid/util/Log;->getStackTraceString(Ljava/lang/Throwable;)Ljava/lang/String;
 
     move-result-object v0
 
-    new-instance v1, Ljava/io/File;
+    new-instance v1, Ljava/lang/StringBuilder;
 
-    iget-object v2, p0, Lcom/ymliberty/app/CrashHandler;->mContext:Landroid/content/Context;
+    invoke-direct {v1}, Ljava/lang/StringBuilder;-><init>()V
 
-    invoke-virtual {v2}, Landroid/content/Context;->getFilesDir()Ljava/io/File;
+    const-string v2, "FATAL UNCAUGHT on thread \'"
+
+    invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    # thread name, when available
+    if-eqz p1, :cond_name
+
+    invoke-virtual {p1}, Ljava/lang/Thread;->getName()Ljava/lang/String;
 
     move-result-object v2
 
-    const-string v3, "crash.txt"
+    invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
-    invoke-direct {v1, v2, v3}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+    :cond_name
+    const-string v2, "\'"
 
-    new-instance v2, Ljava/io/FileOutputStream;
+    invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
-    invoke-direct {v2, v1}, Ljava/io/FileOutputStream;-><init>(Ljava/io/File;)V
+    invoke-virtual {v1}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
 
-    const-string v1, "UTF-8"
+    move-result-object v1
 
-    invoke-virtual {v0, v1}, Ljava/lang/String;->getBytes(Ljava/lang/String;)[B
+    # Preferred path: append to the persistent log file, and mirror to logcat.
+    const-string v2, "CRASH"
+
+    invoke-static {v2, v1, p2}, Lcom/ymliberty/app/YMLogger;->logThrowable(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)V
+
+    # Also keep the legacy crash.txt so the in-app dialog keeps working.
+    new-instance v2, Ljava/io/File;
+
+    iget-object v3, p0, Lcom/ymliberty/app/CrashHandler;->mContext:Landroid/content/Context;
+
+    invoke-virtual {v3}, Landroid/content/Context;->getFilesDir()Ljava/io/File;
+
+    move-result-object v3
+
+    const-string v4, "crash.txt"
+
+    invoke-direct {v2, v3, v4}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+
+    new-instance v3, Ljava/io/FileOutputStream;
+
+    invoke-direct {v3, v2}, Ljava/io/FileOutputStream;-><init>(Ljava/io/File;)V
+
+    const-string v2, "UTF-8"
+
+    invoke-virtual {v0, v2}, Ljava/lang/String;->getBytes(Ljava/lang/String;)[B
 
     move-result-object v0
 
-    invoke-virtual {v2, v0}, Ljava/io/FileOutputStream;->write([B)V
+    invoke-virtual {v3, v0}, Ljava/io/FileOutputStream;->write([B)V
 
-    invoke-virtual {v2}, Ljava/io/FileOutputStream;->close()V
+    invoke-virtual {v3}, Ljava/io/FileOutputStream;->close()V
     :try_end_0
     .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
 

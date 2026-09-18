@@ -235,6 +235,75 @@ function fallbackCopy(text) {
   }
 }
 
+// --- Custom dropdown ---------------------------------------------------------
+// Native <select> popups are rendered by the OS (white sheet, system radio
+// buttons) and cannot be styled, so they looked nothing like the app. This is a
+// drop-in replacement driven by data-value attributes.
+function setupYmSelect(el, onChange) {
+  if (!el) return null;
+  const valueEl = el.querySelector('.ym-select-value');
+  const menu = el.querySelector('.ym-select-menu');
+  if (!menu) return null;
+  const options = Array.from(menu.querySelectorAll('.ym-select-option'));
+
+  const setLabel = (val) => {
+    const match = options.find(o => o.dataset.value === String(val));
+    if (valueEl) valueEl.textContent = match ? match.textContent.trim() : '';
+    options.forEach(o => o.classList.toggle('is-selected', o.dataset.value === String(val)));
+  };
+
+  let current = options[0] ? options[0].dataset.value : '';
+  setLabel(current);
+
+  const close = () => { menu.classList.add('hidden'); el.classList.remove('is-open'); };
+  const open = () => { menu.classList.remove('hidden'); el.classList.add('is-open'); };
+
+  el.addEventListener('click', (e) => {
+    if (e.target.closest('.ym-select-option')) return; // handled below
+    menu.classList.contains('hidden') ? open() : close();
+  });
+  options.forEach(opt => {
+    opt.addEventListener('click', (e) => {
+      e.stopPropagation();
+      current = opt.dataset.value;
+      setLabel(current);
+      close();
+      if (typeof onChange === 'function') onChange(current);
+    });
+  });
+  // Tapping outside closes the menu.
+  document.addEventListener('click', (e) => {
+    if (!el.contains(e.target)) close();
+  });
+
+  return {
+    get value() { return current; },
+    set value(v) { current = String(v); setLabel(current); },
+  };
+}
+
+// --- Diagnostics -------------------------------------------------------------
+// Writes into the same file the native crash handler uses
+// (Android/data/com.ymliberty.app/files/ymliberty-log.txt) so a single log
+// covers both sides.
+function ylog(tag, message) {
+  try {
+    if (window.AndroidBridge && typeof window.AndroidBridge.logLine === 'function') {
+      window.AndroidBridge.logLine(String(tag || 'JS'), String(message));
+    }
+  } catch (e) {}
+  console.log('[' + tag + ']', message);
+}
+
+function ylogError(tag, message) {
+  try {
+    if (window.AndroidBridge && typeof window.AndroidBridge.logError === 'function') {
+      window.AndroidBridge.logError(String(tag || 'JS'), String(message));
+    }
+  } catch (e) {}
+  console.warn('[' + tag + ']', message);
+}
+
 let toastTimeout = null;
 function showToast(text, icon, tone) {
   const toast = document.getElementById('global-toast');
@@ -2962,7 +3031,10 @@ function updateWaveStatsDisplay() {
 
 // --- Cloud Account Persistence (Restores stats on app reinstall) ---
 async function syncWaveStatsFromAccount() {
-  if (!state.token || !YandexClient.getUserPlaylistsRaw) return;
+  if (!state.token || !YandexClient.getUserPlaylistsRaw) {
+    ylog('SYNC', 'skipped: no token or client unavailable');
+    return;
+  }
   try {
     const playlists = await YandexClient.getUserPlaylistsRaw(state.token);
     const statPl = (playlists || []).find(p => p.title && p.title.startsWith(STATS_PLAYLIST_PREFIX));
@@ -3023,7 +3095,8 @@ async function syncWaveStatsFromAccount() {
       }
     }
   } catch (e) {
-    console.warn('Sync stats with account error:', e);
+    ylogError('SYNC', 'read stats from account failed: ' + (e && e.message ? e.message : e));
+    statsSyncFailed = true;
   }
 }
 
@@ -3105,23 +3178,26 @@ function scheduleAccountStatsSync(immediate = false) {
           syncPlaylistKind = statPl.kind;
         } else {
           const created = await YandexClient.createPrivatePlaylist(newTitle, state.token);
-          if (created && created.kind) syncPlaylistKind = created.kind;
+          if (created && created.kind) {
+            syncPlaylistKind = created.kind;
+            ylog('SYNC', 'created account stats playlist kind=' + created.kind);
+          } else {
+            ylogError('SYNC', 'could not create account stats playlist');
+            statsSyncFailed = true;
+          }
           return;
         }
       }
 
       if (syncPlaylistKind && YandexClient.renamePlaylist) {
-        const renamed = await YandexClient.renamePlaylist(syncPlaylistKind, newTitle, state.token);
-        // A rejected rename used to be swallowed by a console.warn, so the stats
-        // silently froze with no way for the user to know.
-        if (renamed && renamed.success === false) {
-          statsSyncFailed = true;
-        } else {
-          statsSyncFailed = false;
-        }
+        await YandexClient.renamePlaylist(syncPlaylistKind, newTitle, state.token);
+        // Reaching this point means the account playlist was located and the
+        // counters were written, so clear any previous failure.
+        if (statsSyncFailed) ylog('SYNC', 'account stats sync recovered');
+        statsSyncFailed = false;
       }
     } catch (e) {
-      console.warn('Stats account sync update error:', e);
+      ylogError('SYNC', 'stats sync failed: ' + (e && e.message ? e.message : e));
       statsSyncFailed = true;
     }
   }, immediate ? 100 : 20000);
@@ -3492,9 +3568,7 @@ function initEqualizerAndQualityUI() {
   }
 
   if (presetSelect) {
-    presetSelect.value = savedPreset;
-    presetSelect.addEventListener('change', () => {
-      const p = presetSelect.value;
+    setupYmSelect(presetSelect, (p) => {
       localStorage.setItem('ym_eq_preset', p);
       if (EQ_PRESETS[p]) {
         bands = [...EQ_PRESETS[p]];
@@ -3505,6 +3579,7 @@ function initEqualizerAndQualityUI() {
       }
       applyEqualizerSettings();
     });
+    presetSelect.value = savedPreset;
   }
 
 // Audio Quality Setting
@@ -3513,14 +3588,13 @@ function initEqualizerAndQualityUI() {
   const savedQuality = localStorage.getItem('ym_audio_quality') || '320';
   const qualityText = (q) => (String(q) === '1000' ? 'Lossless (FLAC)' : `${q} kbps`);
   if (qualitySelect) {
-    qualitySelect.value = savedQuality;
-    if (qualityLabel) qualityLabel.textContent = qualityText(savedQuality);
-    qualitySelect.addEventListener('change', () => {
-      const q = qualitySelect.value;
+    setupYmSelect(qualitySelect, (q) => {
       localStorage.setItem('ym_audio_quality', q);
       if (qualityLabel) qualityLabel.textContent = qualityText(q);
       showToast(`Качество звука: ${qualityText(q)}`, 'bi-check2-circle');
     });
+    qualitySelect.value = savedQuality;
+    if (qualityLabel) qualityLabel.textContent = qualityText(savedQuality);
   }
 
   // Crossfade Setting
@@ -3568,8 +3642,8 @@ function getAppVersionInfo() {
   // in AndroidManifest.xml. They previously read 4 / '1.0.3', which made a
   // failed bridge lookup silently claim an ancient version and could hide or
   // fake an update.
-  let versionCode = 17;
-  let versionName = '1.1.0';
+  let versionCode = 20;
+  let versionName = '1.1.3';
   if (window.AndroidBridge) {
     if (typeof window.AndroidBridge.getVersionCode === 'function') {
       try {

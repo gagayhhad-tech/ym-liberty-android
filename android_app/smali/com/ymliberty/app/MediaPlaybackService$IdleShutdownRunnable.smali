@@ -10,9 +10,12 @@
 .method constructor <init>(Lcom/ymliberty/app/MediaPlaybackService;)V
     .registers 2
 
-    iput-object p1, p0, Lcom/ymliberty/app/MediaPlaybackService$IdleShutdownRunnable;->this$0:Lcom/ymliberty/app/MediaPlaybackService;
-
+    # super() MUST run before touching `this`: storing into a field of an
+    # uninitialized instance is a verifier error (VerifyError at class load),
+    # which crashed the app as soon as the service tried to arm this runnable.
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
+
+    iput-object p1, p0, Lcom/ymliberty/app/MediaPlaybackService$IdleShutdownRunnable;->this$0:Lcom/ymliberty/app/MediaPlaybackService;
 
     return-void
 .end method

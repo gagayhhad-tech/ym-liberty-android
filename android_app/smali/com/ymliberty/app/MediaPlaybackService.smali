@@ -865,11 +865,17 @@
 .end method
 
 .method public onCreate()V
-    .registers 5
+    .registers 6
 
     invoke-super {p0}, Landroid/app/Service;->onCreate()V
 
     sput-object p0, Lcom/ymliberty/app/MediaPlaybackService;->sInstance:Lcom/ymliberty/app/MediaPlaybackService;
+
+    const-string v0, "SVC"
+
+    const-string v1, "onCreate"
+
+    invoke-static {v0, v1}, Lcom/ymliberty/app/YMLogger;->log(Ljava/lang/String;Ljava/lang/String;)V
 
     invoke-direct {p0}, Lcom/ymliberty/app/MediaPlaybackService;->startImmediateForeground()V
 
@@ -961,7 +967,11 @@
 
     const/4 v3, 0x0
 
-    invoke-static {p0, v3, v2, v3}, Landroid/app/PendingIntent;->getActivity(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;
+    # FLAG_IMMUTABLE (0x4000000) is mandatory from Android 12: passing 0 makes
+    # PendingIntent.getActivity throw IllegalArgumentException.
+    const/high16 v4, 0x4000000
+
+    invoke-static {p0, v3, v2, v4}, Landroid/app/PendingIntent;->getActivity(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;
 
     move-result-object v2
 

@@ -102,6 +102,12 @@
     :try_end_0
     .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
 
+    # The normal path must return BEFORE the handler. Falling through into
+    # `move-exception` is illegal: that instruction is only valid as the entry
+    # point of an exception handler (ART: "invalid use of move-exception as
+    # branch target").
+    return-void
+
     :catch_0
     move-exception v1
 
@@ -198,6 +204,37 @@
     return v0
 .end method
 
+.method public logLine(Ljava/lang/String;Ljava/lang/String;)V
+    .registers 3
+    .annotation runtime Landroid/webkit/JavascriptInterface;
+    .end annotation
+
+    :try_start_0
+    invoke-static {p1, p2}, Lcom/ymliberty/app/YMLogger;->log(Ljava/lang/String;Ljava/lang/String;)V
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+
+    return-void
+
+    :catch_0
+    return-void
+.end method
+
+.method public logError(Ljava/lang/String;Ljava/lang/String;)V
+    .registers 3
+    .annotation runtime Landroid/webkit/JavascriptInterface;
+    .end annotation
+
+    :try_start_0
+    invoke-static {p1, p2}, Lcom/ymliberty/app/YMLogger;->logError(Ljava/lang/String;Ljava/lang/String;)V
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+
+    return-void
+
+    :catch_0
+    return-void
+.end method
 .method public getVersionName()Ljava/lang/String;
     .registers 4
     .annotation runtime Landroid/webkit/JavascriptInterface;
@@ -329,9 +366,10 @@
 
     :cond_parse
     :try_start_0
-    const/4 v0, 0x7
-
-    invoke-static {p0, v0}, Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;
+    # Uri.parse(String) takes ONE argument. The 0x7 that used to be passed here
+    # was a leftover from a two-arg overload that does not exist, so the
+    # verifier rejected the whole class.
+    invoke-static {p0}, Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;
 
     move-result-object v0
 

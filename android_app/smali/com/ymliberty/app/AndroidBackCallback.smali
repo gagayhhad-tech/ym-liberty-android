@@ -10,9 +10,11 @@
 .method public constructor <init>(Landroid/app/Activity;)V
     .registers 2
 
-    iput-object p1, p0, Lcom/ymliberty/app/AndroidBackCallback;->mActivity:Landroid/app/Activity;
-
+    # super() first — see the note in MediaPlaybackService$IdleShutdownRunnable.
+    # Assigning a field before the superclass constructor runs is a VerifyError.
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
+
+    iput-object p1, p0, Lcom/ymliberty/app/AndroidBackCallback;->mActivity:Landroid/app/Activity;
 
     return-void
 .end method

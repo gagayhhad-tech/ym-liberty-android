@@ -231,12 +231,16 @@
               <span>Качество аудио</span>
               <span id="audio-quality-label" style="color: var(--text-secondary); font-size: 13px;">320 kbps</span>
             </div>
-<select id="setting-audio-quality" class="custom-select">
-              <option value="1000">Lossless (FLAC)</option>
-              <option value="320">Высокое (320 kbps, MP3)</option>
-              <option value="192">Среднее (192 kbps, MP3)</option>
-              <option value="128">Экономное (128 kbps, MP3)</option>
-            </select>
+<div class="ym-select" id="setting-audio-quality" role="listbox" tabindex="0">
+              <span class="ym-select-value" id="audio-quality-selected"></span>
+              <i class="bi bi-chevron-down ym-select-arrow"></i>
+              <div class="ym-select-menu hidden">
+              <button type="button" class="ym-select-option" data-value="1000">Lossless (FLAC)</button>
+              <button type="button" class="ym-select-option" data-value="320">Высокое (320 kbps, MP3)</button>
+              <button type="button" class="ym-select-option" data-value="192">Среднее (192 kbps, MP3)</button>
+              <button type="button" class="ym-select-option" data-value="128">Экономное (128 kbps, MP3)</button>
+              </div>
+            </div>
           </div>
 
           <!-- Equalizer Card -->
@@ -255,16 +259,20 @@
             <div id="eq-controls" class="eq-controls disabled">
               <div class="eq-preset-row">
                 <span style="font-size: 13px; color: var(--text-secondary);">Пресет:</span>
-                <select id="setting-eq-preset" class="custom-select" style="max-width: 170px;">
-                  <option value="flat">Плоский (Flat)</option>
-                  <option value="bass">Усиление басов</option>
-                  <option value="rock">Рок</option>
-                  <option value="pop">Поп</option>
-                  <option value="electronic">Электроника</option>
-                  <option value="vocal">Вокал</option>
-                  <option value="jazz">Джаз</option>
-                  <option value="custom">Пользовательский</option>
-                </select>
+                <div class="ym-select" id="setting-eq-preset" role="listbox" tabindex="0">
+              <span class="ym-select-value" id="eq-preset-selected"></span>
+              <i class="bi bi-chevron-down ym-select-arrow"></i>
+              <div class="ym-select-menu hidden">
+              <button type="button" class="ym-select-option" data-value="flat">Плоский (Flat)</button>
+              <button type="button" class="ym-select-option" data-value="bass">Бас-буст</button>
+              <button type="button" class="ym-select-option" data-value="rock">Рок</button>
+              <button type="button" class="ym-select-option" data-value="pop">Поп</button>
+              <button type="button" class="ym-select-option" data-value="electronic">Электроника</button>
+              <button type="button" class="ym-select-option" data-value="vocal">Вокал</button>
+              <button type="button" class="ym-select-option" data-value="jazz">Джаз</button>
+              <button type="button" class="ym-select-option" data-value="custom">Пользовательский</button>
+              </div>
+            </div>
               </div>
 
               <div class="eq-sliders-container">
