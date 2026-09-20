@@ -512,6 +512,15 @@ function renderTracks() {
       playQueueTrack(state.queue[0]);
     };
   }
+
+  const downloadAllBtn = document.getElementById('btn-download-all');
+  if (downloadAllBtn) {
+    // Only the Android build can hand a file to DownloadManager; in a browser
+    // the button would do nothing, so hide it instead of failing on click.
+    const native = window.AndroidBridge && typeof window.AndroidBridge.downloadTrack === 'function';
+    downloadAllBtn.style.display = native ? 'flex' : 'none';
+    downloadAllBtn.onclick = () => downloadWholeLibrary(downloadAllBtn);
+  }
   
   if (state.tracks.length === 0) {
     dom.tracksList.innerHTML = `
@@ -2546,16 +2555,27 @@ function renderLyrics() {
 
 async function loadLyricsForCurrentTrack() {
   const track = state.currentTrack;
+
+  // The button is a permanent toggle, NOT gated on whether lyrics load.
+  // Hiding it on a failed/empty fetch was the reported "no lyrics button": a
+  // transient network error would remove it for the rest of the session. The
+  // panel itself explains the absence ("Текст недоступен"), which is honest and
+  // keeps the control where the user expects it.
+  if (dom.btnLyrics && track && track.id) dom.btnLyrics.classList.remove('hidden');
+
   if (!track || !track.id || !state.token) {
-    if (dom.btnLyrics) dom.btnLyrics.classList.add('hidden');
+    state.lyricsLines = [];
+    if (state.lyricsOpen) renderLyrics();
     return;
   }
   const trackId = String(track.id);
 
-  // Show the panel as loading only if the user has lyrics open; the fetch
-  // happens regardless so the availability check can hide the button.
+  // The panel is already open from the previous track, so show a spinner until
+  // this one's text arrives instead of leaving stale lines on screen.
   const seq = ++state.lyricsRequestSeq;
-  if (dom.btnLyrics) dom.btnLyrics.classList.add('hidden');
+  if (state.lyricsOpen && dom.fullLyricsLines) {
+    dom.fullLyricsLines.innerHTML = '<div class="lyrics-loading"><i class="bi bi-arrow-repeat"></i><span>Загружаю текст…</span></div>';
+  }
 
   let result = null;
   try {
@@ -2571,7 +2591,6 @@ async function loadLyricsForCurrentTrack() {
 
   if (!result || !result.text) {
     state.lyricsLines = [];
-    if (dom.btnLyrics) dom.btnLyrics.classList.add('hidden');
     if (state.lyricsOpen) renderLyrics();
     return;
   }
@@ -2589,7 +2608,6 @@ async function loadLyricsForCurrentTrack() {
       .map(s => ({ time: null, text: s }));
   }
 
-  if (dom.btnLyrics) dom.btnLyrics.classList.remove('hidden');
   if (state.lyricsOpen) {
     renderLyrics();
     updateLyricsHighlight();
@@ -2610,7 +2628,9 @@ function toggleLyrics(force) {
   } else {
     dom.fullLyrics.classList.add('hidden');
     dom.fullCover.style.opacity = '';
-    if (btnLyricsIcon) btnLyricsIcon.className = 'bi bi-music-note-text';
+    // bi-music-note-text does not exist in Bootstrap Icons 1.11.3 — it
+    // rendered as an empty glyph, so the button looked invisible.
+    if (btnLyricsIcon) btnLyricsIcon.className = 'bi bi-card-text';
   }
 }
 
@@ -2851,6 +2871,39 @@ function detectAudioFormat(streamUrl) {
   return { ext: 'mp3', mime: 'audio/mpeg' };
 }
 
+// Resolve one track's stream URL and hand it to DownloadManager. Deliberately
+// silent so the batch path can enqueue a whole library without a toast per
+// track; downloadTrackToDevice() wraps this with user-facing feedback.
+async function enqueueTrackDownload(track, artistName, trackId, toCache) {
+  if (!trackId || !state.token) return false;
+  if (!(window.AndroidBridge && typeof window.AndroidBridge.downloadTrack === 'function')) return false;
+
+  let streamUrl;
+  try {
+    const data = await fetchTrackStream(trackId);
+    streamUrl = data && data.streamUrl;
+  } catch (e) {
+    console.error('Download: could not resolve stream URL', e);
+    return false;
+  }
+
+  if (!streamUrl) return false;
+  // The native guard only accepts https; a relative URL would be rejected there.
+  if (!/^https:\/\//i.test(streamUrl)) return false;
+
+  const { ext, mime } = detectAudioFormat(streamUrl);
+  const title = track.title || track.track?.title || 'Трек';
+  const artist = artistName || (typeof track.artists === 'string' ? track.artists : '') || '';
+  const fileName = buildDownloadFileName(artist, title, ext);
+
+  try {
+    return Boolean(window.AndroidBridge.downloadTrack(streamUrl, fileName, mime, toCache));
+  } catch (e) {
+    console.error('Download: bridge call failed', e);
+    return false;
+  }
+}
+
 async function downloadTrackToDevice(track, artistName, trackId, toCache) {
   if (!trackId) return;
   if (!state.token) {
@@ -2863,49 +2916,97 @@ async function downloadTrackToDevice(track, artistName, trackId, toCache) {
   }
 
   showToast('Получаю ссылку на аудио…', 'bi-cloud-arrow-down');
-
-  let streamUrl;
-  try {
-    const data = await fetchTrackStream(trackId);
-    streamUrl = data && data.streamUrl;
-  } catch (e) {
-    console.error('Download: could not resolve stream URL', e);
-    showToast('Не удалось получить ссылку на трек', 'bi-wifi-off');
-    return;
-  }
-
-  if (!streamUrl) {
-    showToast('Трек недоступен для скачивания', 'bi-exclamation-circle');
-    return;
-  }
-  // The native guard only accepts https; a relative URL would be rejected there.
-  if (!/^https:\/\//i.test(streamUrl)) {
-    showToast('Не удалось начать скачивание', 'bi-exclamation-circle');
-    return;
-  }
-
-  const { ext, mime } = detectAudioFormat(streamUrl);
-  const title = track.title || track.track?.title || 'Трек';
-  const artist = artistName || (typeof track.artists === 'string' ? track.artists : '') || '';
-  const fileName = buildDownloadFileName(artist, title, ext);
-
-  let ok = false;
-  try {
-    ok = Boolean(window.AndroidBridge.downloadTrack(streamUrl, fileName, mime, toCache));
-  } catch (e) {
-    console.error('Download: bridge call failed', e);
-    ok = false;
-  }
+  const ok = await enqueueTrackDownload(track, artistName, trackId, toCache);
 
   if (ok) {
     showToast(
-      toCache ? `Скачиваю в кэш: ${fileName}` : `Скачиваю в «Музыку»: ${fileName}`,
+      toCache ? `Скачиваю в кэш: ${track.title || 'Трек'}` : `Скачиваю в «Музыку»: ${track.title || 'Трек'}`,
       'bi-download',
       'success'
     );
   } else {
     showToast('Скачивание не началось', 'bi-exclamation-triangle');
   }
+}
+
+// Download every track in the collection. Stream URLs are resolved a few at a
+// time: firing a few hundred download-info requests at once would trip Yandex
+// rate limiting and fail the whole batch. Enqueueing itself is cheap, so the
+// bottleneck is URL resolution, which is what the pool bounds.
+let libraryDownloadRunning = false;
+
+async function downloadWholeLibrary(btn) {
+  if (libraryDownloadRunning) {
+    showToast('Скачивание уже идёт…', 'bi-hourglass-split');
+    return;
+  }
+  if (!state.token) {
+    showToast('Сначала войдите в аккаунт', 'bi-exclamation-circle');
+    return;
+  }
+  if (!(window.AndroidBridge && typeof window.AndroidBridge.downloadTrack === 'function')) {
+    showToast('Скачивание доступно только в приложении', 'bi-exclamation-circle');
+    return;
+  }
+
+  const tracks = state.tracks || [];
+  if (tracks.length === 0) {
+    showToast('В коллекции нет треков', 'bi-exclamation-circle');
+    return;
+  }
+
+  libraryDownloadRunning = true;
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add('downloading');
+    btn.title = 'Скачиваю коллекцию…';
+  }
+  showToast(`Начинаю скачивание ${tracks.length} треков…`, 'bi-cloud-arrow-down');
+
+  const CONCURRENCY = 3;
+  let cursor = 0;
+  let ok = 0;
+  let failed = 0;
+
+  const worker = async () => {
+    while (cursor < tracks.length) {
+      const i = cursor++;
+      const t = tracks[i];
+      if (!t) continue;
+      const raw = t.track || t;
+      const id = String(raw.id || t.id || '');
+      if (!id) { failed++; continue; }
+
+      let artist = t.artists;
+      if (Array.isArray(artist)) artist = artist.map(a => a && (a.name || a)).filter(Boolean).join(', ');
+      else if (raw.artists) artist = raw.artists.map(a => a && a.name).filter(Boolean).join(', ');
+      if (typeof artist !== 'string') artist = '';
+
+      const enqueued = await enqueueTrackDownload(t, artist, id, false);
+      if (enqueued) ok++; else failed++;
+    }
+  };
+
+  try {
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, tracks.length) }, worker));
+  } catch (e) {
+    console.error('Library download failed:', e);
+  }
+
+  libraryDownloadRunning = false;
+  if (btn) {
+    btn.disabled = false;
+    btn.classList.remove('downloading');
+    btn.title = 'Скачать все треки';
+  }
+
+  showToast(
+    failed === 0
+      ? `Передано на скачивание: ${ok}`
+      : `Скачано ${ok}, не удалось ${failed}`,
+    failed === 0 ? 'bi-check2-circle' : 'bi-exclamation-triangle',
+    failed === 0 ? 'success' : 'warn'
+  );
 }
 
 // --- Action Sheet (Three Dots) & Playlist Chooser ---
@@ -4090,8 +4191,8 @@ function getAppVersionInfo() {
   // in AndroidManifest.xml. They previously read 4 / '1.0.3', which made a
   // failed bridge lookup silently claim an ancient version and could hide or
   // fake an update.
-  let versionCode = 22;
-  let versionName = '1.1.5';
+  let versionCode = 23;
+  let versionName = '1.1.6';
   if (window.AndroidBridge) {
     if (typeof window.AndroidBridge.getVersionCode === 'function') {
       try {

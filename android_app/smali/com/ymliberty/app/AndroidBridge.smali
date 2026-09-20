@@ -462,6 +462,8 @@
 # permission for a DownloadManager write into public storage.
 .method public downloadTrack(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)Z
     .registers 10
+    .annotation runtime Landroid/webkit/JavascriptInterface;
+    .end annotation
 
     :try_start_0
     if-eqz p1, :cond_fail

@@ -264,6 +264,12 @@ input:checked + .slider:before {
   transform: scale(0.9);
   background: transparent !important;
 }
+/* The lyrics button toggles via .hidden. Without this it stayed in the flex
+   row and held ~44px of width, which pushed .full-player-context off centre
+   even when the button showed nothing (its glyph name did not exist either). */
+.icon-btn.hidden {
+  display: none;
+}
 
 /* Bottom Navigation */
 .bottom-nav {
@@ -461,6 +467,11 @@ input:checked + .slider:before {
   pointer-events: none !important;
 }
 
+/* Three-column header. The two flanks each take an equal share of the free
+   space and the title sizes to its content, which is what keeps the title
+   genuinely centred. Plain space-between cannot do that: the right flank holds
+   two buttons (lyrics + menu) while the left holds one, so the title was pushed
+   off centre by half a button width whenever the lyrics button was visible. */
 .full-player-header {
   display: flex;
   justify-content: space-between;
@@ -471,12 +482,23 @@ input:checked + .slider:before {
   color: var(--text-secondary);
 }
 
+.full-player-header > .icon-btn,
+.full-player-header > .full-player-header-actions {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* The flank expands but its icon must stay pinned to the outer edge. */
+.full-player-header > .icon-btn {
+  text-align: left;
+}
+
 .full-player-context {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   padding: 0 10px;
   text-align: center;
@@ -535,11 +557,18 @@ input:checked + .slider:before {
 .full-player-header-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 2px;
 }
 
 /* Overlays the cover art in place, so opening lyrics never changes the player
-   layout. The cover stays mounted behind it to keep the ambient backdrop. */
+   layout. The cover stays mounted behind it to keep the ambient backdrop.
+   Needs its own .hidden rule — see the note on .vibe-sync-warning.hidden.
+   Without it the panel sat over the artwork permanently, which is the dark
+   translucent square that covered the cover art. */
+.full-lyrics.hidden {
+  display: none;
+}
 .full-lyrics {
   position: absolute;
   inset: 0;
@@ -1005,6 +1034,30 @@ input[type=range]::-webkit-slider-thumb {
   color: var(--text-secondary);
   font-size: 14px;
 }
+/* Sits left of the play button and takes the auto margin, so the pair stays
+   pinned to the right edge of .playlist-header. Giving both buttons
+   margin-left:auto would split the free space and strand this one mid-row. */
+.download-all-btn {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.download-all-btn:disabled {
+  opacity: 0.4;
+}
+.download-all-btn.downloading i {
+  animation: spin 1s linear infinite;
+}
+
 .play-all-btn {
   background: var(--accent-color);
   color: #000;
@@ -1016,7 +1069,8 @@ input[type=range]::-webkit-slider-thumb {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-left: auto;
+  margin-left: 10px;
+  flex-shrink: 0;
 }
 
 .empty-state {
@@ -2065,6 +2119,16 @@ input[type=range]::-webkit-slider-thumb {
 .vibe-sync-warning i {
   font-size: 16px;
   flex-shrink: 0;
+}
+
+/* There is deliberately NO generic ".hidden { display: none }" in this sheet:
+   .mini-player.hidden and .global-toast.hidden animate out via transform and
+   opacity, and a global display:none would cut those animations off and leave
+   the mini player vanishing instantly. So every element that hides via the
+   .hidden class needs its own rule. This one was missing, which is why the
+   sync warning stayed on screen permanently. */
+.vibe-sync-warning.hidden {
+  display: none;
 }
 /* === custom dropdown === */
 /* --- Custom dropdown (replaces the OS-rendered native <select> popup) ------- */
