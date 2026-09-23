@@ -599,9 +599,9 @@ const streamCache = new Map(); // id -> Promise<{ streamUrl, ... }>
 let preloadedTrack = null;     // { id, streamUrl, ... }
 let preloadPromise = null;
 
-async function fetchTrackStream(id) {
+async function fetchTrackStream(id, forceRefresh = false) {
   const idStr = String(id);
-  if (streamCache.has(idStr)) {
+  if (!forceRefresh && streamCache.has(idStr)) {
     return streamCache.get(idStr);
   }
   const p = YandexClient.getStreamUrl(idStr, state.token);
@@ -2880,7 +2880,7 @@ async function enqueueTrackDownload(track, artistName, trackId, toCache) {
 
   let streamUrl;
   try {
-    const data = await fetchTrackStream(trackId);
+    const data = await fetchTrackStream(trackId, true);
     streamUrl = data && data.streamUrl;
   } catch (e) {
     console.error('Download: could not resolve stream URL', e);

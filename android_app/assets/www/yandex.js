@@ -940,7 +940,7 @@ const YandexClient = {
   // seconds. This is the scheme the official Android client uses (LyricsHttpApi
   // + the sign helper in its decompiled code); the web client signs differently
   // (HMAC-SHA256), so the Android one is what works with the mobile API host.
-  LYRICS_SALT: 'p93jhgh689SBReK6ghtw62',
+  LYRICS_SALT: 'XGRSTTXRwy',
 
   // LRC gives timestamped lines; TEXT is the unsynchronized fallback.
   async getLyrics(trackId, token, preferSync = true) {
@@ -957,34 +957,49 @@ const YandexClient = {
         `https://api.music.yandex.net/tracks/${idStr}/lyrics?format=${format}&timeStamp=${timeStamp}&sign=${encodeURIComponent(sign)}`,
         { headers: this.getHeaders(token) }
       );
-      if (!res.ok) return null;
+      if (!res.ok) {
+        console.warn('Lyrics request failed:', res.status, format);
+        return preferSync ? this.getLyrics(trackId, token, false) : null;
+      }
       const data = await res.json();
       info = data.result || null;
     } catch (e) {
-      return null;
+      console.warn('Lyrics request error:', e?.message || e);
+      return preferSync ? this.getLyrics(trackId, token, false) : null;
     }
     if (!info) return null;
 
-    // Retry with plain TEXT when this track has no synchronized lyrics at all.
-    if (preferSync && info.downloadUrl === undefined && !info.url) {
-      return this.getLyrics(trackId, token, false);
+    // Yandex has used both a downloadable document and inline text in this
+    // endpoint. Prefer inline text so a changed CDN response cannot hide lyrics.
+    const inlineText = [info.text, info.lyrics, info.fullLyrics, info.result?.text,
+      info.result?.lyrics, info.result?.fullLyrics].find(value => typeof value === 'string' && value.trim());
+    if (inlineText) {
+      return {
+        lyricId: info.lyricId || info.lyricsId || info.externalLyricId || null,
+        writers: Array.isArray(info.writers) ? info.writers : [],
+        sync: format === 'LRC' && /\[\d{1,3}:\d{1,2}/.test(inlineText),
+        text: inlineText
+      };
     }
 
-    const downloadUrl = info.downloadUrl || info.url;
-    if (!downloadUrl) return null;
+    const downloadUrl = info.downloadUrl || info.url || info.result?.downloadUrl || info.result?.url;
+    if (!downloadUrl) {
+      return preferSync ? this.getLyrics(trackId, token, false) : null;
+    }
 
     try {
-      const textRes = await fetch(downloadUrl);
-      if (!textRes.ok) return null;
+      const textRes = await fetch(downloadUrl, { headers: { Accept: 'text/plain,*/*' } });
+      if (!textRes.ok) return preferSync ? this.getLyrics(trackId, token, false) : null;
       const text = await textRes.text();
+      if (!text.trim()) return preferSync ? this.getLyrics(trackId, token, false) : null;
       return {
-        lyricId: info.lyricId || info.externalLyricId || null,
+        lyricId: info.lyricId || info.lyricsId || info.externalLyricId || null,
         writers: Array.isArray(info.writers) ? info.writers : [],
-        sync: format === 'LRC',
+        sync: format === 'LRC' && /\[\d{1,3}:\d{1,2}/.test(text),
         text
       };
     } catch (e) {
-      return null;
+      return preferSync ? this.getLyrics(trackId, token, false) : null;
     }
   }
 };

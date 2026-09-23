@@ -588,28 +588,42 @@ input:checked + .slider:before {
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 40% 18px;
+  padding: 42% 22px;
   text-align: center;
   scroll-behavior: smooth;
-  /* Fade the top and bottom edges so lines scroll out of view softly. */
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 17%, #000 83%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 17%, #000 83%, transparent 100%);
 }
 
 .lyric-line {
-  padding: 7px 0;
-  font-size: 17px;
+  max-width: 30em;
+  margin: 0 auto;
+  padding: 9px 0;
+  font-size: 18px;
   line-height: 1.35;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.38);
-  transition: color 0.3s ease, transform 0.3s ease, opacity 0.3s ease;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.34);
+  opacity: 0.72;
+  transform: scale(0.96);
+  transition: color 0.35s ease, transform 0.35s ease, opacity 0.35s ease, filter 0.35s ease;
 }
 
 .lyric-line.active {
   color: #fff;
   font-weight: 800;
-  font-size: 20px;
-  transform: scale(1.02);
+  font-size: 24px;
+  opacity: 1;
+  filter: drop-shadow(0 2px 14px rgba(0, 0, 0, 0.25));
+  transform: scale(1);
+}
+
+.lyric-line[data-index].active ~ .lyric-line[data-index] {
+  opacity: 0.5;
+}
+
+.lyric-line.meta {
+  opacity: 0.45;
+  transform: none;
 }
 
 /* Instrumental gaps and empty lines still need spacing, or two sung lines

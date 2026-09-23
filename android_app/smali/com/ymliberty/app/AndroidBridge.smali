@@ -522,6 +522,18 @@
 
     invoke-virtual {v3, p3}, Landroid/app/DownloadManager$Request;->setMimeType(Ljava/lang/String;)Landroid/app/DownloadManager$Request;
 
+    const-string v0, "User-Agent"
+
+    const-string v1, "YandexMusicAndroid/24023621"
+
+    invoke-virtual {v3, v0, v1}, Landroid/app/DownloadManager$Request;->addRequestHeader(Ljava/lang/String;Ljava/lang/String;)Landroid/app/DownloadManager$Request;
+
+    const-string v0, "Accept"
+
+    const-string v1, "audio/*,*/*;q=0.8"
+
+    invoke-virtual {v3, v0, v1}, Landroid/app/DownloadManager$Request;->addRequestHeader(Ljava/lang/String;Ljava/lang/String;)Landroid/app/DownloadManager$Request;
+
     # VISIBILITY_VISIBLE_NOTIFY_COMPLETED (1). v0 is a free local here, reused so
     # v4 stays available for the DIRECTORY_MUSIC string below.
     const/4 v0, 0x1
