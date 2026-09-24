@@ -5017,6 +5017,7 @@ let auraTargetColors = [
   { r: 255, g: 213, b: 0 },
   { r: 207, g: 0, b: 236 }
 ];
+let auraCoverRequestSeq = 0;
 
 function initVibeAmbientAura() {
   vibeAuraCanvas = document.getElementById('vibe-ambient-canvas');
@@ -5044,20 +5045,14 @@ function initVibeAmbientAura() {
   startAuraLoop();
 }
 
-function getCoverSamplingUrl(coverUrl) {
-  if (!coverUrl || coverUrl === PLACEHOLDER_COVER) return '';
-  let normalized = String(coverUrl);
-  if (normalized.includes('%%')) normalized = normalized.replace('%%', '400x400');
-  if (!normalized.startsWith('http')) normalized = `https://${normalized}`;
-  return `https://ym-liberty-bot.vercel.app/api/cover?url=${encodeURIComponent(normalized)}`;
-}
-
 function updateVibeAmbientAura(coverUrl) {
   if (!coverUrl || coverUrl === PLACEHOLDER_COVER) return;
+  const requestSeq = ++auraCoverRequestSeq;
   try {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
+      if (requestSeq !== auraCoverRequestSeq) return;
       try {
         const offCanvas = document.createElement('canvas');
         offCanvas.width = 16;
@@ -5086,10 +5081,22 @@ function updateVibeAmbientAura(coverUrl) {
           auraTargetColors[1] = { r: Math.min(255, p.r + 30), g: Math.max(0, p.g - 20), b: Math.min(255, p.b + 60) };
           auraTargetColors[2] = { r: Math.max(0, p.r - 40), g: Math.min(255, p.g + 50), b: Math.min(255, p.b + 20) };
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Cannot sample cover color (canvas/CORS):', e);
+      }
     };
-    img.src = getCoverSamplingUrl(coverUrl);
-  } catch (e) {}
+    img.onerror = (e) => {
+      if (requestSeq === auraCoverRequestSeq) {
+        console.warn('Cannot load cover for Wave colors:', e);
+      }
+    };
+    // Keep the original direct-image path. Cover sampling worked this way
+    // before; sending it through the updater backend added an unnecessary
+    // deployment dependency and changed which cache/CORS path WebView uses.
+    img.src = coverUrl;
+  } catch (e) {
+    console.warn('Cannot create cover sampler:', e);
+  }
 }
 
 function getAudioSpectrumData() {
