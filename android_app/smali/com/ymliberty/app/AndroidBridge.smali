@@ -281,7 +281,7 @@
 .end method
 
 .method public deleteDownloadedTrack(Ljava/lang/String;)Z
-    .registers 10
+    .registers 11
     .annotation runtime Landroid/webkit/JavascriptInterface;
     .end annotation
 
@@ -299,6 +299,7 @@
     move-result v0
     if-nez v0, :cond_delete_download_fail
 
+    const/4 v8, 0x0
     iget-object v0, p0, Lcom/ymliberty/app/AndroidBridge;->mContext:Landroid/content/Context;
     sget-object v1, Landroid/os/Environment;->DIRECTORY_MUSIC:Ljava/lang/String;
     invoke-virtual {v0, v1}, Landroid/content/Context;->getExternalFilesDir(Ljava/lang/String;)Ljava/io/File;
@@ -312,7 +313,7 @@
     if-eqz v0, :cond_delete_public
     invoke-virtual {v1}, Ljava/io/File;->delete()Z
     move-result v0
-    move v1, v0
+    move v8, v0
 
     :cond_delete_public
     :try_start_public_delete
@@ -332,15 +333,15 @@
     invoke-virtual {v2, v3, v4, v5}, Landroid/content/ContentResolver;->delete(Landroid/net/Uri;Ljava/lang/String;[Ljava/lang/String;)I
     move-result v2
     if-lez v2, :cond_delete_return
-    const/4 v1, 0x1
+    const/4 v8, 0x1
     :cond_delete_return
     :try_end_public_delete
     .catch Ljava/lang/Throwable; {:try_start_public_delete .. :try_end_public_delete} :catch_public_delete
-    return v1
+    return v8
 
     :catch_public_delete
     move-exception v2
-    return v1
+    return v8
 
     :cond_delete_download_fail
     const/4 v0, 0x0
