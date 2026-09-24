@@ -5048,6 +5048,14 @@ function initVibeAmbientAura() {
 function updateVibeAmbientAura(coverUrl) {
   if (!coverUrl || coverUrl === PLACEHOLDER_COVER) return;
   const requestSeq = ++auraCoverRequestSeq;
+  const ambientWrap = document.getElementById('vibe-ambient-wrap');
+  if (ambientWrap) {
+    let normalizedCover = String(coverUrl);
+    if (normalizedCover.includes('%%')) normalizedCover = normalizedCover.replace('%%', '400x400');
+    if (!normalizedCover.startsWith('http')) normalizedCover = `https://${normalizedCover}`;
+    ambientWrap.style.setProperty('--vibe-cover-image', `url("${normalizedCover}")`);
+    ambientWrap.classList.add('has-cover');
+  }
   try {
     const img = new Image();
     img.crossOrigin = 'anonymous';

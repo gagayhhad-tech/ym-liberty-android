@@ -997,6 +997,24 @@ input[type=range]::-webkit-slider-thumb {
   mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 100%);
 }
 
+.vibe-ambient-wrap::before {
+  content: "";
+  position: absolute;
+  inset: -18%;
+  z-index: -1;
+  opacity: 0;
+  background-image: var(--vibe-cover-image);
+  background-size: cover;
+  background-position: center;
+  filter: blur(58px) saturate(1.45) brightness(.72);
+  transform: scale(1.15);
+  transition: opacity .8s ease, filter .8s ease;
+  mix-blend-mode: screen;
+}
+.vibe-ambient-wrap.has-cover::before {
+  opacity: .68;
+}
+
 .vibe-ambient-canvas {
   position: absolute;
   top: 0;
@@ -1006,6 +1024,8 @@ input[type=range]::-webkit-slider-thumb {
   display: block;
   transform: translateZ(0);
   pointer-events: none;
+  opacity: .72;
+  mix-blend-mode: screen;
 }
 
 .vibe-container {
