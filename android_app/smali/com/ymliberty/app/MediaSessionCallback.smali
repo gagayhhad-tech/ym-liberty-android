@@ -15,6 +15,7 @@
 .method public onPause()V
     .registers 2
 
+    invoke-static {}, Lcom/ymliberty/app/MediaPlaybackService;->clearNoisyResume()V
     const-string v0, "pause"
 
     invoke-static {v0}, Lcom/ymliberty/app/MainActivity;->onMediaAction(Ljava/lang/String;)V
@@ -25,6 +26,7 @@
 .method public onPlay()V
     .registers 2
 
+    invoke-static {}, Lcom/ymliberty/app/MediaPlaybackService;->clearNoisyResume()V
     const-string v0, "play"
 
     invoke-static {v0}, Lcom/ymliberty/app/MainActivity;->onMediaAction(Ljava/lang/String;)V
@@ -50,6 +52,7 @@
 .method public onSkipToNext()V
     .registers 2
 
+    invoke-static {}, Lcom/ymliberty/app/MediaPlaybackService;->clearNoisyResume()V
     const-string v0, "next"
 
     invoke-static {v0}, Lcom/ymliberty/app/MainActivity;->onMediaAction(Ljava/lang/String;)V
@@ -60,6 +63,7 @@
 .method public onSkipToPrevious()V
     .registers 2
 
+    invoke-static {}, Lcom/ymliberty/app/MediaPlaybackService;->clearNoisyResume()V
     const-string v0, "prev"
 
     invoke-static {v0}, Lcom/ymliberty/app/MainActivity;->onMediaAction(Ljava/lang/String;)V

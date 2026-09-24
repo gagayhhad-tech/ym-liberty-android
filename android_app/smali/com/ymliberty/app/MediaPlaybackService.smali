@@ -28,6 +28,12 @@
 
 .field private mNoisyReceiver:Lcom/ymliberty/app/NoisyAudioReceiver;
 
+.field private mNoisyResumePending:Z
+
+.field private mAudioManager:Landroid/media/AudioManager;
+
+.field private mAudioDeviceCallback:Lcom/ymliberty/app/AudioOutputDeviceCallback;
+
 # direct methods
 .method public constructor <init>()V
     .registers 4
@@ -56,6 +62,61 @@
 
     iput-wide v1, p0, Lcom/ymliberty/app/MediaPlaybackService;->mDurationMs:J
 
+    return-void
+.end method
+
+.method public static onAudioOutputNoisy()V
+    .registers 3
+
+    sget-object v0, Lcom/ymliberty/app/MediaPlaybackService;->sInstance:Lcom/ymliberty/app/MediaPlaybackService;
+    if-eqz v0, :cond_noisy_exit
+
+    iget-boolean v1, v0, Lcom/ymliberty/app/MediaPlaybackService;->mIsPlaying:Z
+    if-eqz v1, :cond_noisy_exit
+
+    const/4 v1, 0x1
+    iput-boolean v1, v0, Lcom/ymliberty/app/MediaPlaybackService;->mNoisyResumePending:Z
+    const/4 v1, 0x0
+    iput-boolean v1, v0, Lcom/ymliberty/app/MediaPlaybackService;->mIsPlaying:Z
+
+    const-string v1, "noisy"
+    invoke-static {v1}, Lcom/ymliberty/app/MainActivity;->onMediaAction(Ljava/lang/String;)V
+    invoke-direct {v0}, Lcom/ymliberty/app/MediaPlaybackService;->updateNotification()V
+
+    :cond_noisy_exit
+    return-void
+.end method
+
+.method public static onAudioOutputConnected()V
+    .registers 3
+
+    sget-object v0, Lcom/ymliberty/app/MediaPlaybackService;->sInstance:Lcom/ymliberty/app/MediaPlaybackService;
+    if-eqz v0, :cond_connected_exit
+
+    iget-boolean v1, v0, Lcom/ymliberty/app/MediaPlaybackService;->mNoisyResumePending:Z
+    if-eqz v1, :cond_connected_exit
+
+    const/4 v1, 0x0
+    iput-boolean v1, v0, Lcom/ymliberty/app/MediaPlaybackService;->mNoisyResumePending:Z
+    const/4 v1, 0x1
+    iput-boolean v1, v0, Lcom/ymliberty/app/MediaPlaybackService;->mIsPlaying:Z
+
+    const-string v1, "output_connected"
+    invoke-static {v1}, Lcom/ymliberty/app/MainActivity;->onMediaAction(Ljava/lang/String;)V
+    invoke-direct {v0}, Lcom/ymliberty/app/MediaPlaybackService;->updateNotification()V
+
+    :cond_connected_exit
+    return-void
+.end method
+
+.method public static clearNoisyResume()V
+    .registers 2
+
+    sget-object v0, Lcom/ymliberty/app/MediaPlaybackService;->sInstance:Lcom/ymliberty/app/MediaPlaybackService;
+    if-eqz v0, :cond_clear_exit
+    const/4 v1, 0x0
+    iput-boolean v1, v0, Lcom/ymliberty/app/MediaPlaybackService;->mNoisyResumePending:Z
+    :cond_clear_exit
     return-void
 .end method
 
@@ -98,6 +159,9 @@
 .method private scheduleIdleShutdown()V
     .registers 5
 
+    iget-boolean v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mNoisyResumePending:Z
+    if-nez v0, :cond_keep_for_reconnect
+
     invoke-direct {p0}, Lcom/ymliberty/app/MediaPlaybackService;->cancelIdleShutdown()V
 
     new-instance v0, Landroid/os/Handler;
@@ -120,6 +184,10 @@
 
     invoke-virtual {v0, v1, v2, v3}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
 
+    return-void
+
+    :cond_keep_for_reconnect
+    invoke-direct {p0}, Lcom/ymliberty/app/MediaPlaybackService;->cancelIdleShutdown()V
     return-void
 .end method
 
@@ -1005,11 +1073,32 @@
 
     invoke-direct {v1, v2}, Landroid/content/IntentFilter;-><init>(Ljava/lang/String;)V
 
+    const-string v2, "android.intent.action.HEADSET_PLUG"
+    invoke-virtual {v1, v2}, Landroid/content/IntentFilter;->addAction(Ljava/lang/String;)V
+
     invoke-virtual {p0, v0, v1}, Landroid/content/Context;->registerReceiver(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;
     :try_end_noisy
     .catch Ljava/lang/Exception; {:try_start_noisy .. :try_end_noisy} :catch_noisy
 
     :catch_noisy
+    :try_start_audio_callback
+    const-string v0, "audio"
+    invoke-virtual {p0, v0}, Landroid/app/Service;->getSystemService(Ljava/lang/String;)Ljava/lang/Object;
+    move-result-object v0
+    check-cast v0, Landroid/media/AudioManager;
+    iput-object v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mAudioManager:Landroid/media/AudioManager;
+    new-instance v1, Lcom/ymliberty/app/AudioOutputDeviceCallback;
+    invoke-direct {v1}, Lcom/ymliberty/app/AudioOutputDeviceCallback;-><init>()V
+    iput-object v1, p0, Lcom/ymliberty/app/MediaPlaybackService;->mAudioDeviceCallback:Lcom/ymliberty/app/AudioOutputDeviceCallback;
+    const/4 v2, 0x0
+    invoke-virtual {v0, v1, v2}, Landroid/media/AudioManager;->registerAudioDeviceCallback(Landroid/media/AudioDeviceCallback;Landroid/os/Handler;)V
+    :try_end_audio_callback
+    .catch Ljava/lang/Exception; {:try_start_audio_callback .. :try_end_audio_callback} :catch_audio_callback
+    goto :audio_callback_done
+    :catch_audio_callback
+    move-exception v0
+    :audio_callback_done
+
     :try_start_init_fgs
     invoke-direct {p0}, Lcom/ymliberty/app/MediaPlaybackService;->updateNotification()V
     :try_end_init_fgs
@@ -1020,7 +1109,7 @@
 .end method
 
 .method public onDestroy()V
-    .registers 3
+    .registers 4
 
     invoke-direct {p0}, Lcom/ymliberty/app/MediaPlaybackService;->cancelIdleShutdown()V
 
@@ -1039,6 +1128,20 @@
 
     :catch_noisy_unreg
     :cond_noisy_skip
+    iget-object v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mAudioManager:Landroid/media/AudioManager;
+    iget-object v1, p0, Lcom/ymliberty/app/MediaPlaybackService;->mAudioDeviceCallback:Lcom/ymliberty/app/AudioOutputDeviceCallback;
+    if-eqz v0, :cond_audio_callback_skip
+    if-eqz v1, :cond_audio_callback_skip
+    :try_start_audio_unreg
+    invoke-virtual {v0, v1}, Landroid/media/AudioManager;->unregisterAudioDeviceCallback(Landroid/media/AudioDeviceCallback;)V
+    :try_end_audio_unreg
+    .catch Ljava/lang/Exception; {:try_start_audio_unreg .. :try_end_audio_unreg} :catch_audio_unreg
+    :catch_audio_unreg
+    :cond_audio_callback_skip
+    const/4 v0, 0x0
+    iput-object v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mAudioManager:Landroid/media/AudioManager;
+    iput-object v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mAudioDeviceCallback:Lcom/ymliberty/app/AudioOutputDeviceCallback;
+
     iget-object v0, p0, Lcom/ymliberty/app/MediaPlaybackService;->mWakeLock:Landroid/os/PowerManager$WakeLock;
 
     if-eqz v0, :cond_d
@@ -1203,6 +1306,9 @@
     move-result v1
 
     if-eqz v1, :cond_63
+
+    const/4 v2, 0x0
+    iput-boolean v2, p0, Lcom/ymliberty/app/MediaPlaybackService;->mNoisyResumePending:Z
 
     const-string v0, "play_pause"
 

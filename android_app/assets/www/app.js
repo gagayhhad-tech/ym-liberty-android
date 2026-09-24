@@ -12,6 +12,34 @@ window.alert = function(msg) {
 // Always reference the bundled asset relatively.
 const PLACEHOLDER_COVER = 'favicon.png';
 
+// A compact personal hub keeps the main Wave action prominent while exposing
+// the most-used collection destinations without changing the three-tab nav.
+(() => {
+  const stats = document.querySelector('.vibe-stats-panel');
+  const animation = document.querySelector('.vibe-animation');
+  const title = document.querySelector('.vibe-title');
+  const subtitle = document.querySelector('.vibe-subtitle');
+  if (animation && title && subtitle && !animation.closest('.vibe-hero')) {
+    const hero = document.createElement('section');
+    hero.className = 'vibe-hero';
+    animation.parentNode.insertBefore(hero, animation);
+    hero.append(animation, title, subtitle);
+  }
+  if (!stats || document.getElementById('home-hub')) return;
+  const hub = document.createElement('section');
+  hub.id = 'home-hub';
+  hub.className = 'home-hub';
+  hub.innerHTML = `
+    <h2>Ваша музыка</h2>
+    <div class="home-hub-grid">
+      <button class="home-hub-card home-hub-continue" id="hub-continue"><i class="bi bi-play-circle-fill"></i><span>Продолжить</span></button>
+      <button class="home-hub-card" id="hub-likes"><i class="bi bi-heart-fill"></i><span>Мне нравится</span></button>
+      <button class="home-hub-card" id="hub-downloads"><i class="bi bi-download"></i><span>Загрузки</span></button>
+      <button class="home-hub-card" id="hub-releases"><i class="bi bi-stars"></i><span>Новинки</span></button>
+    </div>`;
+  stats.parentNode.insertBefore(hub, stats);
+})();
+
 // --- DOM Elements ---
 const dom = {
   navBtns: document.querySelectorAll('.nav-btn'),
@@ -83,12 +111,22 @@ playerB.addEventListener('play', ensureAudioContextResumed);
 
 let activePlayer = playerA;
 let preloadPlayer = playerB;
+let autoPausedTrackId = null;
+function clearNoisyAutoResume() {
+  autoPausedTrackId = null;
+  try {
+    if (window.AndroidBridge && typeof window.AndroidBridge.clearNoisyAutoResume === 'function') {
+      window.AndroidBridge.clearNoisyAutoResume();
+    }
+  } catch (_) {}
+}
 
 // --- State ---
 const state = {
   token: localStorage.getItem('ym_token') || '',
   user: null,
   tracks: [], // Library tracks
+  collectionTagFilter: null,
   queue: [], // Current play queue
   queueIndex: 0,
   queueMode: 'library', // 'library', 'vibe', 'playlist', 'album', 'artist'
@@ -129,6 +167,8 @@ function updatePlaybackContextHeader(subtitle, title) {
       state.playbackContext = { subtitle: 'ИГРАЕТ ИЗ АЛЬБОМА', title: 'Альбом' };
     } else if (state.queueMode === 'artist') {
       state.playbackContext = { subtitle: 'ТРЕКИ АРТИСТА', title: state.currentTrack?.artist || 'Артист' };
+    } else if (state.queueMode === 'downloads') {
+      state.playbackContext = { subtitle: 'ОФЛАЙН-ПРОСЛУШИВАНИЕ', title: 'Загрузки' };
     } else {
       state.playbackContext = { subtitle: 'ИГРАЕТ ИЗ КОЛЛЕКЦИИ', title: 'Любимые треки' };
     }
@@ -191,6 +231,53 @@ dom.navBtns.forEach(btn => {
     if (typeof startAuraLoop === 'function') startAuraLoop();
   });
 });
+
+document.getElementById('hub-continue')?.addEventListener('click', () => {
+  if (state.currentTrack && !state.isPlaying) handlePlayToggle();
+  else if (state.isPlaying) return;
+  else dom.vibePlayBtn?.click();
+});
+document.getElementById('hub-likes')?.addEventListener('click', () => {
+  document.querySelector('.nav-btn[data-target="view-library"]')?.click();
+  document.getElementById('seg-tracks')?.click();
+});
+document.getElementById('hub-downloads')?.addEventListener('click', () => {
+  document.querySelector('.nav-btn[data-target="view-library"]')?.click();
+  document.getElementById('seg-downloads')?.click();
+});
+document.getElementById('hub-releases')?.addEventListener('click', () => {
+  document.getElementById('vibe-releases-track-list')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+
+// Edge swipes move only between the primary tabs. Ignore controls, nested
+// scrollers, dialogs, and the full-screen player; vertical gestures always win.
+(() => {
+  const order = ['view-vibe', 'view-library', 'view-settings'];
+  let startX = 0, startY = 0, startTarget = null;
+  document.addEventListener('touchstart', (event) => {
+    const touch = event.changedTouches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    startTarget = event.target;
+  }, { passive: true });
+  document.addEventListener('touchend', (event) => {
+    const fullPlayer = document.getElementById('full-player');
+    if (!startTarget || (fullPlayer && !fullPlayer.classList.contains('translateY-100'))) return;
+    const activeView = document.querySelector('.view.active');
+    if (!order.includes(activeView?.id) || !activeView.contains(startTarget)) return;
+    if (startTarget.closest('button,a,input,textarea,select,[role="dialog"],.modal,.tracks-list,.releases-carousel,.full-lyrics-lines,.vibe-mood-chips')) return;
+    if (document.querySelector('.modal-overlay:not(.hidden), .modal:not(.hidden), [role="dialog"]:not([hidden])')) return;
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - startX, dy = touch.clientY - startY;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
+    const current = document.querySelector('.nav-btn.active')?.dataset.target;
+    const index = order.indexOf(current);
+    const next = order[index + (dx < 0 ? 1 : -1)];
+    const button = [...dom.navBtns].find(item => item.dataset.target === next);
+    if (button) button.click();
+    startTarget = null;
+  }, { passive: true });
+})();
 
 // --- Auth Logic ---
 let authPollTimer = null;
@@ -497,9 +584,67 @@ async function fetchLibrary(token) {
   }
 }
 
+function getCollectionLabels(entry) {
+  const track = entry?.track || entry || {};
+  const album = track.albums?.[0] || entry?.albums?.[0] || {};
+  const asLabels = (value) => {
+    const values = Array.isArray(value) ? value : (value ? [value] : []);
+    return values.map(item => typeof item === 'string' ? item : item?.name || item?.title || item?.value)
+      .filter(Boolean).map(String);
+  };
+  const moods = [
+    ...asLabels(track.moods), ...asLabels(track.moodTags), ...asLabels(track.mood),
+    ...asLabels(album.moods), ...asLabels(album.moodTags)
+  ];
+  if (moods.length) return { type: 'mood', labels: [...new Set(moods)] };
+  const genres = [
+    ...asLabels(track.genres), ...asLabels(track.genre),
+    ...asLabels(album.genres), ...asLabels(album.genre)
+  ];
+  return { type: 'genre', labels: [...new Set(genres)] };
+}
+
+function renderCollectionTags() {
+  const list = document.getElementById('tracks-list');
+  if (!list) return;
+  let bar = document.getElementById('collection-tag-filters');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'collection-tag-filters';
+    bar.className = 'collection-tag-filters';
+    list.parentNode.insertBefore(bar, list);
+  }
+  const details = state.tracks.map(getCollectionLabels);
+  const moodTags = [...new Set(details.flatMap(item => item.type === 'mood' ? item.labels : []))].sort();
+  const genreTags = [...new Set(details.flatMap(item => item.type === 'genre' ? item.labels : []))].sort();
+  const tags = [...new Set([...moodTags, ...genreTags])];
+  if (!tags.length) {
+    bar.replaceChildren();
+    bar.hidden = true;
+    state.collectionTagFilter = null;
+    return;
+  }
+  bar.hidden = false;
+  if (state.collectionTagFilter && !tags.includes(state.collectionTagFilter)) state.collectionTagFilter = null;
+  const makeGroup = (caption, items) => items.length
+    ? `<div class="collection-tag-caption">${caption}</div><div class="collection-tag-row">${items.map(tag =>
+      `<button type="button" class="collection-tag-chip ${state.collectionTagFilter === tag ? 'active' : ''}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
+    ).join('')}</div>`
+    : '';
+  bar.innerHTML = `<div class="collection-tag-row"><button type="button" class="collection-tag-chip ${state.collectionTagFilter ? '' : 'active'}" data-tag="">Все</button></div>
+    ${makeGroup('Настроения', moodTags)}${makeGroup('Жанры', genreTags)}`;
+  bar.querySelectorAll('.collection-tag-chip').forEach(button => {
+    button.addEventListener('click', () => {
+      state.collectionTagFilter = button.dataset.tag || null;
+      renderTracks();
+    });
+  });
+}
+
 function renderTracks() {
   dom.likesCount.textContent = `${state.tracks.length} треков`;
   dom.tracksList.innerHTML = '';
+  renderCollectionTags();
   
   const playAllBtn = document.querySelector('.play-all-btn');
   if (playAllBtn) {
@@ -522,16 +667,19 @@ function renderTracks() {
     downloadAllBtn.onclick = () => downloadWholeLibrary(downloadAllBtn);
   }
   
-  if (state.tracks.length === 0) {
+  const visibleTracks = state.collectionTagFilter
+    ? state.tracks.filter(track => getCollectionLabels(track).labels.includes(state.collectionTagFilter))
+    : state.tracks;
+  if (visibleTracks.length === 0) {
     dom.tracksList.innerHTML = `
       <div class="empty-state">
         <i class="bi bi-music-note-beamed"></i>
-        <p>Нет загруженных треков</p>
+        <p>${state.tracks.length ? 'В этой категории пока нет треков' : 'Нет любимых треков'}</p>
       </div>`;
     return;
   }
   
-  state.tracks.forEach(track => {
+  visibleTracks.forEach(track => {
     if (!track) return;
     
     const div = document.createElement('div');
@@ -545,6 +693,9 @@ function renderTracks() {
     }
     const isExplicit = track.explicit || track.contentWarning === 'explicit';
     const badgeHtml = track.isLiberty ? `<span class="liberty-badge"><i class="bi bi-gem"></i></span>` : (isExplicit ? `<span class="explicit-badge">E</span>` : '');
+    const downloadedHtml = isTrackDownloaded(track.id, artist, track.title)
+      ? '<span class="track-download-state" title="Загружено"><i class="bi bi-check-circle-fill"></i></span>'
+      : '';
     div._trackData = track;
     div.innerHTML = `
       <img src="${coverUrl}" loading="lazy" alt="cover">
@@ -552,7 +703,7 @@ function renderTracks() {
         <div class="track-title"><span class="track-title-text">${escapeHtml(track.title)}</span>${badgeHtml}</div>
         <div class="track-artist">${artist}</div>
       </div>
-      <i class="bi bi-three-dots track-dots" style="color: var(--text-secondary);"></i>
+      ${downloadedHtml}<i class="bi bi-three-dots track-dots" style="color: var(--text-secondary);"></i>
     `;
     
     div.addEventListener('click', (e) => {
@@ -599,17 +750,18 @@ const streamCache = new Map(); // id -> Promise<{ streamUrl, ... }>
 let preloadedTrack = null;     // { id, streamUrl, ... }
 let preloadPromise = null;
 
-async function fetchTrackStream(id, forceRefresh = false) {
+async function fetchTrackStream(id, forceRefresh = false, qualityOverride = null) {
   const idStr = String(id);
-  if (!forceRefresh && streamCache.has(idStr)) {
-    return streamCache.get(idStr);
+  const cacheKey = qualityOverride ? `${idStr}:${qualityOverride}` : idStr;
+  if (!forceRefresh && streamCache.has(cacheKey)) {
+    return streamCache.get(cacheKey);
   }
-  const p = YandexClient.getStreamUrl(idStr, state.token);
-  streamCache.set(idStr, p);
+  const p = YandexClient.getStreamUrl(idStr, state.token, qualityOverride);
+  streamCache.set(cacheKey, p);
   try {
     return await p;
   } catch(e) {
-    streamCache.delete(idStr);
+    streamCache.delete(cacheKey);
     throw e;
   }
 }
@@ -641,6 +793,7 @@ function getNextTrack() {
 
 async function preloadNextTrack() {
   try {
+    if (state.queueMode === 'downloads') return;
     if (!state.token) return;
     if (state.queueMode === 'vibe' && state.queueIndex + 2 >= state.queue.length) {
       fetchMoreVibeTracks().catch(() => {});
@@ -994,6 +1147,7 @@ function playQueueTrack(track) {
 }
 
 async function playTrack(id, title, artist, cover, explicit, isLiberty, artistId, rawTrack) {
+  clearNoisyAutoResume();
   resetCrossfadeState();
   const idStr = String(id);
   const trackInfo = { id: idStr, title, artist, cover, explicit, isLiberty, artistId, track: rawTrack };
@@ -1002,6 +1156,25 @@ async function playTrack(id, title, artist, cover, explicit, isLiberty, artistId
   // Set Loading State
   state.isPlaying = false;
   updatePlayButtons();
+
+  if (rawTrack?.offlineUrl) {
+    preloadPlayer.pause();
+    preloadPlayer.removeAttribute('src');
+    preloadedTrack = null;
+    preloadPromise = null;
+    activePlayer.pause();
+    activePlayer.src = rawTrack.offlineUrl;
+    try {
+      await activePlayer.play();
+      state.isPlaying = true;
+      updatePlayButtons();
+      return;
+    } catch (e) {
+      console.error('Offline playback failed:', e);
+      showToast('Не удалось открыть загруженный файл', 'bi-exclamation-triangle');
+      return;
+    }
+  }
   
   // Check if this track was preloaded and ready in preloadPlayer
   if (preloadedTrack && String(preloadedTrack.id) === idStr) {
@@ -1065,9 +1238,11 @@ function setupMediaSession() {
   if (!('mediaSession' in navigator)) return;
   try {
     navigator.mediaSession.setActionHandler('play', () => {
+      clearNoisyAutoResume();
       activePlayer.play();
     });
     navigator.mediaSession.setActionHandler('pause', () => {
+      clearNoisyAutoResume();
       activePlayer.pause();
     });
     navigator.mediaSession.setActionHandler('previoustrack', () => {
@@ -1131,10 +1306,13 @@ function syncNativeMedia(title, artist, isPlaying, positionMs, durationMs, cover
 window.handleMediaAction = function(action) {
   console.log("Native media action:", action);
   if (action === 'play_pause') {
+    clearNoisyAutoResume();
     handlePlayToggle();
   } else if (action === 'play') {
+    clearNoisyAutoResume();
     if (!state.isPlaying) handlePlayToggle();
   } else if (action === 'pause') {
+    clearNoisyAutoResume();
     try {
       activePlayer.pause();
       playerA.pause();
@@ -1142,9 +1320,35 @@ window.handleMediaAction = function(action) {
     } catch(e) {}
     state.isPlaying = false;
     updatePlayButtons();
+  } else if (action === 'noisy') {
+    autoPausedTrackId = state.isPlaying && state.currentTrack ? String(state.currentTrack.id) : null;
+    if (!autoPausedTrackId) return;
+    const position = Number(activePlayer.currentTime);
+    if (Number.isFinite(position)) {
+      try { savePlaybackState(true); } catch (_) {}
+    }
+    activePlayer.pause();
+    playerA.pause();
+    playerB.pause();
+    state.isPlaying = false;
+    updatePlayButtons();
+  } else if (action === 'output_connected') {
+    const resumeId = autoPausedTrackId;
+    clearNoisyAutoResume();
+    if (!resumeId || !state.currentTrack || String(state.currentTrack.id) !== resumeId) return;
+    activePlayer.play().then(() => {
+      if (!state.currentTrack || String(state.currentTrack.id) !== resumeId) {
+        activePlayer.pause();
+        return;
+      }
+      state.isPlaying = true;
+      updatePlayButtons();
+    }).catch((error) => console.warn('Headphone reconnect resume blocked:', error));
   } else if (action === 'next') {
+    clearNoisyAutoResume();
     playNext();
   } else if (action === 'prev') {
+    clearNoisyAutoResume();
     playPrev();
   }
 };
@@ -2007,6 +2211,7 @@ async function startTrackVibe(seedTrack) {
 function handlePlayToggle(e) {
   if (e && e.stopPropagation) e.stopPropagation();
   if (!state.currentTrack) return;
+  clearNoisyAutoResume();
   if (state.isPlaying) {
     activePlayer.pause();
   } else {
@@ -2515,11 +2720,13 @@ function parseLrc(text) {
 }
 
 function lrcTimeToSeconds(str) {
-  const parts = str.replace('.', ':').split(':');
-  if (parts.length < 2) return null;
-  const mins = parseInt(parts[0], 10) || 0;
-  const secs = parseFloat(parts[1]) || 0;
-  return mins * 60 + secs;
+  const match = String(str).match(/^(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?$/);
+  if (!match) return null;
+  const mins = Number(match[1]);
+  const secs = Number(match[2]);
+  const fraction = match[3] ? Number(`0.${match[3]}`) : 0;
+  if (!Number.isFinite(mins) || !Number.isFinite(secs) || secs >= 60) return null;
+  return mins * 60 + secs + fraction;
 }
 
 // Render the current state.lyricsLines into the panel. Synchronized lines get
@@ -2564,11 +2771,13 @@ async function loadLyricsForCurrentTrack() {
   if (dom.btnLyrics && track && track.id) dom.btnLyrics.classList.remove('hidden');
 
   if (!track || !track.id || !state.token) {
+    ylog('LYRICS', `skip track=${track?.id || 'none'} token=${state.token ? 'yes' : 'no'}`);
     state.lyricsLines = [];
     if (state.lyricsOpen) renderLyrics();
     return;
   }
   const trackId = String(track.id);
+  const durationMs = Number(track.durationMs || track.track?.durationMs || 0);
 
   // The panel is already open from the previous track, so show a spinner until
   // this one's text arrives instead of leaving stale lines on screen.
@@ -2579,8 +2788,9 @@ async function loadLyricsForCurrentTrack() {
 
   let result = null;
   try {
-    result = await YandexClient.getLyrics(trackId, state.token, true);
+    result = await YandexClient.getLyrics(trackId, state.token, true, durationMs);
   } catch (e) {
+    ylogError('LYRICS', `request exception track=${trackId}: ${e?.message || e}`);
     result = null;
   }
   // A newer track started while this was in flight — drop the stale result.
@@ -2590,6 +2800,7 @@ async function loadLyricsForCurrentTrack() {
   state.lyricsTrackId = trackId;
 
   if (!result || !result.text) {
+    ylogError('LYRICS', `empty result track=${trackId}`);
     state.lyricsLines = [];
     if (state.lyricsOpen) renderLyrics();
     return;
@@ -2598,6 +2809,7 @@ async function loadLyricsForCurrentTrack() {
   // Synchronized LRC parses to timed lines; if the track only had plain TEXT
   // (no timestamps), fall back to one line per paragraph, unhighlighted.
   const parsed = result.sync ? parseLrc(result.text) : [];
+  ylog('LYRICS', `loaded track=${trackId} sync=${result.sync} chars=${result.text.length} lines=${parsed.length}`);
   if (parsed.length > 0) {
     state.lyricsLines = parsed;
   } else {
@@ -2622,12 +2834,14 @@ function toggleLyrics(force) {
   if (willOpen) {
     dom.fullLyrics.classList.remove('hidden');
     dom.fullCover.style.opacity = '0';
+    dom.fullPlayer.classList.add('lyrics-mode');
     if (btnLyricsIcon) btnLyricsIcon.className = 'bi bi-x-lg';
     renderLyrics();
     updateLyricsHighlight();
   } else {
     dom.fullLyrics.classList.add('hidden');
     dom.fullCover.style.opacity = '';
+    dom.fullPlayer.classList.remove('lyrics-mode');
     // bi-music-note-text does not exist in Bootstrap Icons 1.11.3 — it
     // rendered as an empty glyph, so the button looked invisible.
     if (btnLyricsIcon) btnLyricsIcon.className = 'bi bi-card-text';
@@ -2757,39 +2971,133 @@ if (state.token) {
   setTimeout(() => dom.authModal.classList.remove('hidden'), 500);
 }
 
-// Segmented Control (Tracks / Playlists)
+// Collection sub-navigation: liked tracks, playlists, and successful downloads.
 const segTracks = document.getElementById('seg-tracks');
 const segPlaylists = document.getElementById('seg-playlists');
 const viewLibraryTracks = document.getElementById('library-tracks-view');
 const viewLibraryPlaylists = document.getElementById('library-playlists-view');
+const librarySegments = segTracks?.parentElement;
+const libraryContent = viewLibraryTracks?.parentElement;
+let segDownloads = document.getElementById('seg-downloads');
+let viewLibraryDownloads = document.getElementById('library-downloads-view');
+
+if (librarySegments && !segDownloads) {
+  segDownloads = document.createElement('button');
+  segDownloads.type = 'button';
+  segDownloads.id = 'seg-downloads';
+  segDownloads.className = 'segment';
+  segDownloads.style.cssText = 'flex:1;border:none;background:transparent;color:#aaa;padding:8px;border-radius:6px;font-weight:600;';
+  segDownloads.textContent = 'Загрузки';
+  librarySegments.appendChild(segDownloads);
+}
+if (libraryContent && !viewLibraryDownloads) {
+  viewLibraryDownloads = document.createElement('div');
+  viewLibraryDownloads.id = 'library-downloads-view';
+  viewLibraryDownloads.style.display = 'none';
+  viewLibraryDownloads.innerHTML = '<div id="downloaded-tracks-list" class="tracks-list" style="padding-top:15px;"></div>';
+  libraryContent.appendChild(viewLibraryDownloads);
+}
+
+function selectLibrarySegment(selected) {
+  const controls = [
+    [segTracks, 'tracks'],
+    [segPlaylists, 'playlists'],
+    [segDownloads, 'downloads']
+  ];
+  controls.forEach(([button, key]) => {
+    if (!button) return;
+    const active = key === selected;
+    button.classList.toggle('active', active);
+    button.style.background = active ? 'rgba(255,255,255,0.2)' : 'transparent';
+    button.style.color = active ? '#fff' : '#aaa';
+  });
+  if (viewLibraryTracks) viewLibraryTracks.style.display = selected === 'tracks' ? 'block' : 'none';
+  if (viewLibraryPlaylists) viewLibraryPlaylists.style.display = selected === 'playlists' ? 'block' : 'none';
+  if (viewLibraryDownloads) viewLibraryDownloads.style.display = selected === 'downloads' ? 'block' : 'none';
+  if (selected === 'playlists' && !state.playlistsLoaded) fetchPlaylists();
+  if (selected === 'downloads') renderDownloadedTracks();
+}
 
 if (segTracks && segPlaylists) {
-  segTracks.addEventListener('click', () => {
-    segTracks.classList.add('active');
-    segTracks.style.background = 'rgba(255,255,255,0.2)';
-    segTracks.style.color = '#fff';
-    segPlaylists.classList.remove('active');
-    segPlaylists.style.background = 'transparent';
-    segPlaylists.style.color = '#aaa';
-    viewLibraryTracks.style.display = 'block';
-    viewLibraryPlaylists.style.display = 'none';
-  });
+  segTracks.addEventListener('click', () => selectLibrarySegment('tracks'));
+  segPlaylists.addEventListener('click', () => selectLibrarySegment('playlists'));
+  segDownloads?.addEventListener('click', () => selectLibrarySegment('downloads'));
+}
 
-  segPlaylists.addEventListener('click', () => {
-    segPlaylists.classList.add('active');
-    segPlaylists.style.background = 'rgba(255,255,255,0.2)';
-    segPlaylists.style.color = '#fff';
-    segTracks.classList.remove('active');
-    segTracks.style.background = 'transparent';
-    segTracks.style.color = '#aaa';
-    viewLibraryTracks.style.display = 'none';
-    viewLibraryPlaylists.style.display = 'block';
-    if (!state.playlistsLoaded) {
-      fetchPlaylists();
-    }
+function renderDownloadedTracks() {
+  const list = document.getElementById('downloaded-tracks-list');
+  if (!list) return;
+  const tracks = getDownloadedTrackRegistry().filter(track => track && track.id && track.fileName);
+  if (!tracks.length) {
+    list.innerHTML = '<div class="empty-state"><i class="bi bi-download"></i><p>????? ???????? ??????????? ?????</p></div>';
+    return;
+  }
+  list.innerHTML = tracks.map(track =>
+    '<div class="track-item downloaded-track-item" data-track-id="' + escapeHtml(track.id) + '">' +
+      '<div class="track-download-art"><i class="bi bi-music-note-beamed"></i></div>' +
+      '<div class="track-info"><div class="track-title">' + escapeHtml(track.title) + '</div>' +
+      '<div class="track-artist">' + escapeHtml(track.artist || '') + '</div></div>' +
+      '<button type="button" class="downloaded-track-action" data-action="play" aria-label="?????????????"><i class="bi bi-play-circle-fill"></i></button>' +
+      '<button type="button" class="downloaded-track-action" data-action="delete" aria-label="??????? ????????"><i class="bi bi-trash3"></i></button>' +
+    '</div>'
+  ).join('');
+  list.querySelectorAll('.downloaded-track-item').forEach(row => {
+    const trackId = row.dataset.trackId;
+    row.querySelector('[data-action="play"]')?.addEventListener('click', () => playDownloadedTrack(trackId));
+    row.querySelector('[data-action="delete"]')?.addEventListener('click', () => deleteDownloadedTrack(trackId));
   });
 }
 
+function playDownloadedTrack(trackId) {
+  const bridge = window.AndroidBridge;
+  if (!bridge || typeof bridge.getDownloadedTrackUrl !== 'function') {
+    showToast('??????-??????????????? ???????? ? ??????????', 'bi-exclamation-circle');
+    return;
+  }
+  state.queue = getDownloadedTrackRegistry().map(track => {
+    let offlineUrl = '';
+    try { offlineUrl = bridge.getDownloadedTrackUrl(track.fileName) || ''; } catch (_) {}
+    return {
+      id: String(track.id), title: track.title, artists: track.artist || '', offlineUrl,
+      coverUri: PLACEHOLDER_COVER, explicit: false, isLiberty: false
+    };
+  }).filter(track => track.offlineUrl);
+  state.queueMode = 'downloads';
+  state.queueIndex = state.queue.findIndex(track => String(track.id) === String(trackId));
+  if (state.queueIndex < 0) {
+    showToast('??????????? ???? ?? ?????? ?? ??????????', 'bi-exclamation-triangle');
+    return;
+  }
+  updatePlaybackContextHeader('??????-?????????????', '????????');
+  playQueueTrack(state.queue[state.queueIndex]);
+}
+
+function deleteDownloadedTrack(trackId) {
+  const record = getDownloadedTrackRegistry().find(track => String(track.id) === String(trackId));
+  if (!record) return;
+  const bridge = window.AndroidBridge;
+  if (!bridge || typeof bridge.deleteDownloadedTrack !== 'function') {
+    showToast('???????? ???????? ???????? ? ??????????', 'bi-exclamation-circle');
+    return;
+  }
+  let deleted = false;
+  try { deleted = Boolean(bridge.deleteDownloadedTrack(record.fileName)); } catch (_) {}
+  if (!deleted) {
+    showToast('?? ??????? ??????? ???? ????????', 'bi-exclamation-triangle');
+    return;
+  }
+  localStorage.setItem(DOWNLOADED_TRACKS_KEY, JSON.stringify(
+    getDownloadedTrackRegistry().filter(track => String(track.id) !== String(trackId))
+  ));
+  localStorage.removeItem('ym_downloaded_track:' + String(trackId));
+  localStorage.removeItem(downloadStorageKey(record.fileName));
+  renderDownloadedTracks();
+  if (state.currentTrack && String(state.currentTrack.id) === String(trackId)) {
+    activePlayer.pause();
+    state.isPlaying = false;
+    updatePlayButtons();
+  }
+}
 async function fetchPlaylists() {
   const plList = document.getElementById('playlists-list');
   plList.innerHTML = '<div style="text-align:center; padding: 20px;"><div class="spinner-border text-light" role="status"></div></div>';
@@ -2851,14 +3159,77 @@ function formatDownloadQualityLabel() {
   return q === '1000' ? 'FLAC' : `${q} kbps`;
 }
 
+function downloadStorageKey(fileName) {
+  return `ym_downloaded:${fileName}`;
+}
+
+const DOWNLOADED_TRACKS_KEY = 'ym_downloaded_tracks_v1';
+const pendingDownloadMetadata = new Map();
+const activeDownloadIds = new Set();
+
+function getDownloadedTrackRegistry() {
+  try {
+    const value = JSON.parse(localStorage.getItem(DOWNLOADED_TRACKS_KEY) || '[]');
+    return Array.isArray(value) ? value : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function isTrackDownloaded(trackId, artist, title) {
+  if (trackId && localStorage.getItem(`ym_downloaded_track:${String(trackId)}`) === '1') return true;
+  return Boolean(artist && title && localStorage.getItem(
+    downloadStorageKey(buildDownloadFileName(artist, title, 'flac'))
+  ) === '1');
+}
+
+function setDownloadButtonsProgress(percent, active) {
+  ['as-btn-download', 'as-btn-download-cache'].forEach((id) => {
+    const button = document.getElementById(id);
+    if (!button) return;
+    button.classList.toggle('download-active', active);
+    button.style.setProperty('--download-progress', `${Math.max(0, Math.min(100, percent))}%`);
+  });
+}
+
+window.onTrackDownloadProgress = function(fileName, percent, done, error) {
+  if (error) {
+    const metadata = pendingDownloadMetadata.get(fileName);
+    if (metadata) activeDownloadIds.delete(metadata.id);
+    pendingDownloadMetadata.delete(fileName);
+    setDownloadButtonsProgress(0, false);
+    showToast(`Ошибка загрузки: ${error}`, 'bi-exclamation-triangle');
+    return;
+  }
+  setDownloadButtonsProgress(percent, !done);
+  if (done) {
+    const metadata = pendingDownloadMetadata.get(fileName);
+    pendingDownloadMetadata.delete(fileName);
+    if (metadata && !metadata.toCache) {
+      activeDownloadIds.delete(metadata.id);
+      localStorage.setItem(downloadStorageKey(fileName), '1');
+      localStorage.setItem(`ym_downloaded_track:${metadata.id}`, '1');
+      const records = getDownloadedTrackRegistry().filter(item => String(item.id) !== String(metadata.id));
+      records.unshift({ ...metadata, fileName, completedAt: Date.now() });
+      try { localStorage.setItem(DOWNLOADED_TRACKS_KEY, JSON.stringify(records)); } catch (_) {}
+      if (document.getElementById('library-downloads-view')?.style.display !== 'none') {
+        renderDownloadedTracks();
+      }
+    }
+    showToast(`Файл загружен: ${fileName}`, 'bi-check-circle-fill', 'success');
+    if (typeof renderTracks === 'function') renderTracks();
+  }
+};
+
 // Filenames come from track titles, which can carry any character. Strip the
 // ones that are illegal in a path or that the native guard rejects.
-function buildDownloadFileName(artist, title, ext) {
+function buildDownloadFileName(artist, title, ext, trackId) {
   const clean = (s) => String(s || '').replace(/[\\/:*?"<>|\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim();
   const a = clean(artist);
   const t = clean(title) || 'track';
   const base = a ? `${a} - ${t}` : t;
-  return `${base.slice(0, 120)}.${ext}`;
+  const idSuffix = trackId ? ` [${clean(trackId).slice(0, 18)}]` : '';
+  return `${base.slice(0, Math.max(1, 120 - idSuffix.length))}${idSuffix}.${ext}`;
 }
 
 // The stream URL encodes the codec in its path (get-flac vs get-mp3), which is
@@ -2877,29 +3248,68 @@ function detectAudioFormat(streamUrl) {
 async function enqueueTrackDownload(track, artistName, trackId, toCache) {
   if (!trackId || !state.token) return false;
   if (!(window.AndroidBridge && typeof window.AndroidBridge.downloadTrack === 'function')) return false;
+  if (!toCache && isTrackDownloaded(trackId)) return true;
+  if (!toCache && activeDownloadIds.has(String(trackId))) return true;
 
   let streamUrl;
+  let downloadInfo;
   try {
-    const data = await fetchTrackStream(trackId, true);
-    streamUrl = data && data.streamUrl;
+    // User downloads are lossless FLAC; the private cache deliberately uses
+    // 320 kbps MP3 to avoid consuming excessive storage.
+    const downloadQuality = toCache ? 'nq' : 'lossless';
+    downloadInfo = await YandexClient.getDownloadInfo(trackId, state.token, downloadQuality);
+    // getDownloadInfo follows the PC client and returns `url`; the playback
+    // resolver uses the older `streamUrl` field.
+    streamUrl = downloadInfo && (downloadInfo.url || downloadInfo.streamUrl);
+    let streamHost = 'none';
+    try {
+      streamHost = streamUrl ? new URL(streamUrl).hostname : 'none';
+    } catch (_) {
+      streamHost = 'invalid';
+    }
+    ylog('DOWNLOAD', `file info resolved track=${trackId} quality=${downloadQuality} host=${streamHost}`);
   } catch (e) {
-    console.error('Download: could not resolve stream URL', e);
+    ylogError('DOWNLOAD', `stream resolve failed track=${trackId}: ${e?.message || e}`);
     return false;
   }
 
-  if (!streamUrl) return false;
+  if (!streamUrl) {
+    ylogError('DOWNLOAD', `empty stream URL track=${trackId}`);
+    return false;
+  }
   // The native guard only accepts https; a relative URL would be rejected there.
-  if (!/^https:\/\//i.test(streamUrl)) return false;
+  if (!/^https:\/\//i.test(streamUrl)) {
+    ylogError('DOWNLOAD', `unsupported stream scheme track=${trackId}`);
+    return false;
+  }
 
-  const { ext, mime } = detectAudioFormat(streamUrl);
+  const { ext, mime } = downloadInfo.codec && String(downloadInfo.codec).includes('flac')
+    ? { ext: 'flac', mime: 'audio/flac' }
+    : detectAudioFormat(streamUrl);
   const title = track.title || track.track?.title || 'Трек';
   const artist = artistName || (typeof track.artists === 'string' ? track.artists : '') || '';
-  const fileName = buildDownloadFileName(artist, title, ext);
+  const fileName = buildDownloadFileName(artist, title, ext, trackId);
+  pendingDownloadMetadata.set(fileName, {
+    id: String(trackId),
+    title: String(title),
+    artist: String(artist),
+    mime,
+    toCache: Boolean(toCache)
+  });
+  if (!toCache) activeDownloadIds.add(String(trackId));
 
   try {
-    return Boolean(window.AndroidBridge.downloadTrack(streamUrl, fileName, mime, toCache));
+    const ok = Boolean(window.AndroidBridge.downloadTrack(streamUrl, fileName, mime, toCache, downloadInfo.keyBase64));
+    if (!ok) {
+      pendingDownloadMetadata.delete(fileName);
+      activeDownloadIds.delete(String(trackId));
+    }
+    ylog('DOWNLOAD', `bridge enqueue track=${trackId} ok=${ok} cache=${Boolean(toCache)} file=${fileName}`);
+    return ok;
   } catch (e) {
-    console.error('Download: bridge call failed', e);
+    pendingDownloadMetadata.delete(fileName);
+    activeDownloadIds.delete(String(trackId));
+    ylogError('DOWNLOAD', `bridge exception track=${trackId}: ${e?.message || e}`);
     return false;
   }
 }
@@ -2916,7 +3326,12 @@ async function downloadTrackToDevice(track, artistName, trackId, toCache) {
   }
 
   showToast('Получаю ссылку на аудио…', 'bi-cloud-arrow-down');
-  const ok = await enqueueTrackDownload(track, artistName, trackId, toCache);
+  let ok = false;
+  try {
+    ok = await enqueueTrackDownload(track, artistName, trackId, toCache);
+  } catch (e) {
+    ylogError('DOWNLOAD', `download preparation failed track=${trackId}: ${e?.message || e}`);
+  }
 
   if (ok) {
     showToast(
@@ -2934,6 +3349,17 @@ async function downloadTrackToDevice(track, artistName, trackId, toCache) {
 // rate limiting and fail the whole batch. Enqueueing itself is cheap, so the
 // bottleneck is URL resolution, which is what the pool bounds.
 let libraryDownloadRunning = false;
+
+async function enqueueTrackDownloadWithRetry(track, artistName, trackId, toCache) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const ok = await enqueueTrackDownload(track, artistName, trackId, toCache);
+    if (ok) return true;
+    if (attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+    }
+  }
+  return false;
+}
 
 async function downloadWholeLibrary(btn) {
   if (libraryDownloadRunning) {
@@ -2963,7 +3389,10 @@ async function downloadWholeLibrary(btn) {
   }
   showToast(`Начинаю скачивание ${tracks.length} треков…`, 'bi-cloud-arrow-down');
 
-  const CONCURRENCY = 3;
+  // Yandex/CDN frequently resets one of several simultaneous large audio
+  // connections. Serializing the requests is slower but reliable and avoids
+  // losing half of a collection download.
+  const CONCURRENCY = 1;
   let cursor = 0;
   let ok = 0;
   let failed = 0;
@@ -2982,8 +3411,9 @@ async function downloadWholeLibrary(btn) {
       else if (raw.artists) artist = raw.artists.map(a => a && a.name).filter(Boolean).join(', ');
       if (typeof artist !== 'string') artist = '';
 
-      const enqueued = await enqueueTrackDownload(t, artist, id, false);
+      const enqueued = await enqueueTrackDownloadWithRetry(t, artist, id, false);
       if (enqueued) ok++; else failed++;
+      await new Promise((resolve) => setTimeout(resolve, 700));
     }
   };
 
@@ -4215,18 +4645,23 @@ async function fetchUpdateMetadata() {
     'https://ym-liberty-bot.vercel.app/api/version?_t=' + Date.now(),
     'https://ym-liberty-bot.vercel.app/version.json?_t=' + Date.now()
   ];
+  let best = null;
   for (const url of endpoints) {
     try {
       const resp = await fetch(url, { cache: 'no-store' });
       if (resp.ok) {
         const data = await resp.json();
-        if (data && data.versionCode) return data;
+        if (data && Number.isFinite(Number(data.versionCode))) {
+          if (!best || Number(data.versionCode) > Number(best.versionCode)) {
+            best = data;
+          }
+        }
       }
     } catch (e) {
       console.warn('Update endpoint check failed:', url, e);
     }
   }
-  return null;
+  return best;
 }
 
 async function checkForUpdates(isManual = false) {
@@ -4535,30 +4970,14 @@ let vibeAuraAnalyser = null;
 let vibeAuraFreqData = null;
 
 let auraCurrentColors = [
-  { r: 254, g: 212, b: 43 },  // YM Gold
-  { r: 35, g: 110, b: 240 },  // Electric Blue
-  { r: 120, g: 30, b: 210 }   // Deep Violet
+  { r: 0, g: 226, b: 90 },    // Wave green
+  { r: 255, g: 213, b: 0 },   // Warm yellow
+  { r: 207, g: 0, b: 236 }    // Magenta
 ];
 let auraTargetColors = [
-  { r: 254, g: 212, b: 43 },
-  { r: 35, g: 110, b: 240 },
-  { r: 120, g: 30, b: 210 }
-];
-
-// Rich multi-blob parameters for deep organic chromatic glow
-const AURA_BLOBS = [
-  { baseX: 0.50, baseY: 0.25, radiusRatio: 0.72, speedX: 0.0006, speedY: 0.0008, phaseX: 0, phaseY: 1.0, colorIdx: 0, alpha: 0.75 },
-  { baseX: 0.30, baseY: 0.30, radiusRatio: 0.58, speedX: 0.0009, speedY: 0.0007, phaseX: 2.3, phaseY: 3.2, colorIdx: 1, alpha: 0.50 },
-  { baseX: 0.70, baseY: 0.28, radiusRatio: 0.60, speedX: 0.0008, speedY: 0.0010, phaseX: 4.1, phaseY: 0.9, colorIdx: 2, alpha: 0.50 }
-];
-
-// 5 High-Definition Concentric Fluid Contour Rings (Official Yandex Music Aesthetic)
-const AURA_RINGS = [
-  { baseRadius: 68,  speed1: 0.0013, speed2: 0.0019, amp1: 6,  amp2: 4,  colorIdx: 0, alpha: 0.85, coreWidth: 2.0 },
-  { baseRadius: 105, speed1: 0.0010, speed2: 0.0015, amp1: 9,  amp2: 6,  colorIdx: 1, alpha: 0.75, coreWidth: 1.8 },
-  { baseRadius: 150, speed1: 0.0008, speed2: 0.0012, amp1: 12, amp2: 8,  colorIdx: 2, alpha: 0.65, coreWidth: 1.6 },
-  { baseRadius: 200, speed1: 0.0006, speed2: 0.0009, amp1: 15, amp2: 10, colorIdx: 0, alpha: 0.50, coreWidth: 1.4 },
-  { baseRadius: 255, speed1: 0.0005, speed2: 0.0007, amp1: 18, amp2: 12, colorIdx: 1, alpha: 0.35, coreWidth: 1.2 }
+  { r: 0, g: 226, b: 90 },
+  { r: 255, g: 213, b: 0 },
+  { r: 207, g: 0, b: 236 }
 ];
 
 function initVibeAmbientAura() {
@@ -4685,124 +5104,56 @@ function startAuraLoop() {
 }
 
 function renderAuraFrame() {
-  // Do not keep a rAF callback alive for the whole app lifetime when the Wave
-  // tab is not even visible. The loop restarts from startAuraLoop().
+  // Soft, flowing color haze; unlike the old visualizer this draws no hard rings or ribbons.
   vibeAuraAnimFrame = 0;
-  if (!vibeAuraCtx) return;
-  if (!auraViewIsActive()) return;
+  if (!vibeAuraCtx || !auraViewIsActive()) return;
   vibeAuraAnimFrame = requestAnimationFrame(renderAuraFrame);
 
   const now = Date.now();
   const audio = getAudioSpectrumData();
-
-  // Smoothly interpolate colors (lerp)
   for (let i = 0; i < 3; i++) {
-    auraCurrentColors[i].r += (auraTargetColors[i].r - auraCurrentColors[i].r) * 0.045;
-    auraCurrentColors[i].g += (auraTargetColors[i].g - auraCurrentColors[i].g) * 0.045;
-    auraCurrentColors[i].b += (auraTargetColors[i].b - auraCurrentColors[i].b) * 0.045;
+    auraCurrentColors[i].r += (auraTargetColors[i].r - auraCurrentColors[i].r) * 0.035;
+    auraCurrentColors[i].g += (auraTargetColors[i].g - auraCurrentColors[i].g) * 0.035;
+    auraCurrentColors[i].b += (auraTargetColors[i].b - auraCurrentColors[i].b) * 0.035;
   }
 
-  vibeAuraCtx.clearRect(0, 0, vibeAuraWidth, vibeAuraHeight);
-
-  // 1. Deep Atmospheric Gradient Cloud (Zero-GPU-overhead multi-stop diffusion)
-  AURA_BLOBS.forEach((blob) => {
-    const offsetX = Math.sin(now * blob.speedX + blob.phaseX) * (vibeAuraWidth * 0.16);
-    const offsetY = Math.cos(now * blob.speedY + blob.phaseY) * (vibeAuraHeight * 0.12);
-    const cx = vibeAuraWidth * blob.baseX + offsetX;
-    const cy = vibeAuraHeight * blob.baseY + offsetY;
-    const radius = Math.min(vibeAuraWidth, vibeAuraHeight) * blob.radiusRatio * audio.pulse;
-
-    const col = auraCurrentColors[blob.colorIdx] || auraCurrentColors[0];
-    const grad = vibeAuraCtx.createRadialGradient(cx, cy, radius * 0.05, cx, cy, radius);
-    grad.addColorStop(0,    `rgba(${Math.round(col.r)}, ${Math.round(col.g)}, ${Math.round(col.b)}, ${blob.alpha})`);
-    grad.addColorStop(0.18, `rgba(${Math.round(col.r)}, ${Math.round(col.g)}, ${Math.round(col.b)}, ${blob.alpha * 0.72})`);
-    grad.addColorStop(0.40, `rgba(${Math.round(col.r)}, ${Math.round(col.g)}, ${Math.round(col.b)}, ${blob.alpha * 0.42})`);
-    grad.addColorStop(0.65, `rgba(${Math.round(col.r)}, ${Math.round(col.g)}, ${Math.round(col.b)}, ${blob.alpha * 0.16})`);
-    grad.addColorStop(0.85, `rgba(${Math.round(col.r)}, ${Math.round(col.g)}, ${Math.round(col.b)}, ${blob.alpha * 0.04})`);
-    grad.addColorStop(1,    `rgba(${Math.round(col.r)}, ${Math.round(col.g)}, ${Math.round(col.b)}, 0)`);
-
-    vibeAuraCtx.fillStyle = grad;
-    vibeAuraCtx.beginPath();
-    vibeAuraCtx.arc(cx, cy, radius, 0, Math.PI * 2);
-    vibeAuraCtx.fill();
-  });
-
-  // 2. Razor-Sharp 3-Pass Luminous Visualizer Bands (Silky 120 FPS Bloom)
-  const centerX = vibeAuraWidth * 0.5;
-  const centerY = 110; // Center of play button
-
-  // A. Concentric Fluid Contour Rings
-  AURA_RINGS.forEach((ring, idx) => {
-    const col = auraCurrentColors[ring.colorIdx] || auraCurrentColors[0];
-    const baseR = ring.baseRadius * audio.pulse;
-    const numPoints = 84;
-    const step = (Math.PI * 2) / numPoints;
-
-    vibeAuraCtx.beginPath();
-    for (let i = 0; i <= numPoints; i++) {
-      const theta = i * step;
-      const wave1 = Math.sin(theta * 2 + now * ring.speed1 + idx * 1.3) * ring.amp1;
-      const wave2 = Math.cos(theta * 3 - now * ring.speed2 + idx * 2.1) * ring.amp2;
-      const audioRipple = Math.sin(theta * 5 + now * 0.005) * (audio.mids * 15 + audio.bass * 11);
-      const r = baseR + wave1 + wave2 + audioRipple;
-
-      const px = centerX + Math.cos(theta) * r;
-      const py = centerY + Math.sin(theta) * (r * 0.88);
-
-      if (i === 0) vibeAuraCtx.moveTo(px, py);
-      else vibeAuraCtx.lineTo(px, py);
-    }
-    vibeAuraCtx.closePath();
-
-    // Pass 1: Soft Atmospheric Bloom
-    vibeAuraCtx.strokeStyle = `rgba(${Math.round(col.r)}, ${Math.round(col.g)}, ${Math.round(col.b)}, ${ring.alpha * 0.16})`;
-    vibeAuraCtx.lineWidth = ring.coreWidth * 4.5;
-    vibeAuraCtx.stroke();
-
-    // Pass 2: Vibrant Mid Glow
-    vibeAuraCtx.strokeStyle = `rgba(${Math.round(col.r)}, ${Math.round(col.g)}, ${Math.round(col.b)}, ${ring.alpha * 0.42})`;
-    vibeAuraCtx.lineWidth = ring.coreWidth * 2.2;
-    vibeAuraCtx.stroke();
-
-    // Pass 3: Crisp Bright Core
-    vibeAuraCtx.strokeStyle = `rgba(${Math.round(col.r)}, ${Math.round(col.g)}, ${Math.round(col.b)}, ${Math.min(0.95, ring.alpha + audio.bass * 0.25)})`;
-    vibeAuraCtx.lineWidth = ring.coreWidth;
-    vibeAuraCtx.stroke();
-  });
-
-  // B. Upper Flowing Stream Ribbons behind "Моя Волна"
-  const waveRibbons = [
-    { y: centerY - 48, speed: 0.0016, freq: 0.009, amp: 15, colorIdx: 0 },
-    { y: centerY + 62, speed: 0.0011, freq: 0.007, amp: 19, colorIdx: 1 }
+  const ctx = vibeAuraCtx;
+  ctx.clearRect(0, 0, vibeAuraWidth, vibeAuraHeight);
+  const hero = document.querySelector('.vibe-hero');
+  const heroRect = hero?.getBoundingClientRect();
+  const canvasRect = vibeAuraCanvas.getBoundingClientRect();
+  const cx = vibeAuraWidth * 0.5;
+  const cy = heroRect ? heroRect.top - canvasRect.top + heroRect.height * 0.57 : vibeAuraHeight * 0.42;
+  const radius = Math.min(vibeAuraWidth * 0.72, vibeAuraHeight * 0.68) * audio.pulse;
+  const phase = now * 0.00012;
+  const pools = [
+    { dx: 0, dy: 0, sx: 1.08, sy: 0.82, color: 1, opacity: 0.77, phase: 0 },
+    { dx: -0.32, dy: -0.06, sx: 0.8, sy: 1.0, color: 2, opacity: 0.58, phase: 2.1 },
+    { dx: 0.32, dy: 0.04, sx: 0.86, sy: 0.76, color: 0, opacity: 0.56, phase: 4.0 }
   ];
 
-  waveRibbons.forEach((ribbon, rIdx) => {
-    const col = auraCurrentColors[ribbon.colorIdx] || auraCurrentColors[0];
-    vibeAuraCtx.beginPath();
-    const startX = -10;
-    const endX = vibeAuraWidth + 10;
-    const stepX = 14;
-
-    for (let x = startX; x <= endX; x += stepX) {
-      const h1 = Math.sin(x * ribbon.freq + now * ribbon.speed + rIdx) * ribbon.amp;
-      const h2 = Math.cos(x * ribbon.freq * 1.8 - now * ribbon.speed * 0.7) * (ribbon.amp * 0.35);
-      const audioBounce = Math.sin(x * 0.02 + now * 0.005) * (audio.mids * 11 + audio.highs * 7);
-      const y = ribbon.y + h1 + h2 + audioBounce;
-
-      if (x === startX) vibeAuraCtx.moveTo(x, y);
-      else vibeAuraCtx.lineTo(x, y);
-    }
-
-    // Pass 1: Bloom
-    vibeAuraCtx.strokeStyle = `rgba(${Math.round(col.r)}, ${Math.round(col.g)}, ${Math.round(col.b)}, 0.12)`;
-    vibeAuraCtx.lineWidth = 6.0;
-    vibeAuraCtx.stroke();
-
-    // Pass 2: Core
-    vibeAuraCtx.strokeStyle = `rgba(${Math.round(col.r)}, ${Math.round(col.g)}, ${Math.round(col.b)}, ${0.45 + audio.mids * 0.3})`;
-    vibeAuraCtx.lineWidth = 1.8;
-    vibeAuraCtx.stroke();
+  ctx.globalCompositeOperation = 'screen';
+  pools.forEach((pool) => {
+    const color = auraCurrentColors[pool.color];
+    const x = cx + pool.dx * vibeAuraWidth * 0.38 + Math.sin(phase + pool.phase) * vibeAuraWidth * 0.045;
+    const y = cy + pool.dy * vibeAuraHeight + Math.cos(phase * 0.8 + pool.phase) * vibeAuraHeight * 0.035;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.sin(phase + pool.phase) * 0.12);
+    ctx.scale(pool.sx, pool.sy);
+    const gradient = ctx.createRadialGradient(0, 0, radius * 0.025, 0, 0, radius);
+    const rgb = Math.round(color.r) + ',' + Math.round(color.g) + ',' + Math.round(color.b);
+    gradient.addColorStop(0, 'rgba(' + rgb + ',' + pool.opacity + ')');
+    gradient.addColorStop(0.22, 'rgba(' + rgb + ',' + (pool.opacity * 0.72) + ')');
+    gradient.addColorStop(0.5, 'rgba(' + rgb + ',' + (pool.opacity * 0.28) + ')');
+    gradient.addColorStop(1, 'rgba(' + rgb + ',0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   });
+  ctx.globalCompositeOperation = 'source-over';
 }
 
 // ==========================================
