@@ -203,6 +203,7 @@ function navigateToView(targetId) {
     else v.classList.remove('active');
   });
   window.scrollTo(0, 0);
+  syncDynamicBackground();
   if (typeof startAuraLoop === 'function') startAuraLoop();
 }
 
@@ -217,7 +218,18 @@ function navigateBack() {
   } else {
     document.querySelector('.nav-btn.active')?.click();
   }
+  syncDynamicBackground();
   if (typeof startAuraLoop === 'function') startAuraLoop();
+}
+
+function syncDynamicBackground() {
+  if (!dom.dynamicBg) return;
+  const vibeIsActive = document.getElementById('view-vibe')?.classList.contains('active');
+  if (dom.toggleDynamicBg?.checked && state.currentTrack && !vibeIsActive) {
+    dom.dynamicBg.style.backgroundImage = `url(${state.currentTrack.cover})`;
+  } else {
+    dom.dynamicBg.style.backgroundImage = 'none';
+  }
 }
 
 dom.navBtns.forEach(btn => {
@@ -234,6 +246,7 @@ dom.navBtns.forEach(btn => {
         view.classList.remove('active');
       }
     });
+    syncDynamicBackground();
     if (typeof startAuraLoop === 'function') startAuraLoop();
   });
 });
@@ -1667,9 +1680,7 @@ function updateTrackUI(trackInfo) {
   if (dom.timeCurrent) dom.timeCurrent.textContent = "0:00";
   if (dom.timeTotal) dom.timeTotal.textContent = "0:00";
   
-  if (dom.toggleDynamicBg.checked) {
-    dom.dynamicBg.style.backgroundImage = `url(${trackInfo.cover})`;
-  }
+  syncDynamicBackground();
   
   // The legacy .blob layers are permanently hidden (app.css: display:none
   // !important) — the canvas aura replaced them. Setting backgroundImage on two
@@ -2940,12 +2951,8 @@ if (dom.fullArtist) {
 }
 
 // Dynamic BG Toggle
-dom.toggleDynamicBg.addEventListener('change', (e) => {
-  if (e.target.checked && state.currentTrack) {
-    dom.dynamicBg.style.backgroundImage = `url(${state.currentTrack.cover})`;
-  } else {
-    dom.dynamicBg.style.backgroundImage = 'none';
-  }
+dom.toggleDynamicBg.addEventListener('change', () => {
+  syncDynamicBackground();
 });
 
 // Color Picker Logic
@@ -4704,8 +4711,8 @@ function getAppVersionInfo() {
   // in AndroidManifest.xml. They previously read 4 / '1.0.3', which made a
   // failed bridge lookup silently claim an ancient version and could hide or
   // fake an update.
-  let versionCode = 47;
-  let versionName = '1.1.30';
+  let versionCode = 48;
+  let versionName = '1.1.31';
   if (window.AndroidBridge) {
     if (typeof window.AndroidBridge.getVersionCode === 'function') {
       try {
