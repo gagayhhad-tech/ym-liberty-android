@@ -4704,8 +4704,8 @@ function getAppVersionInfo() {
   // in AndroidManifest.xml. They previously read 4 / '1.0.3', which made a
   // failed bridge lookup silently claim an ancient version and could hide or
   // fake an update.
-  let versionCode = 44;
-  let versionName = '1.1.27';
+  let versionCode = 46;
+  let versionName = '1.1.29';
   if (window.AndroidBridge) {
     if (typeof window.AndroidBridge.getVersionCode === 'function') {
       try {
@@ -5049,6 +5049,8 @@ let vibeAuraCtx = null;
 let vibeAuraWidth = 0;
 let vibeAuraHeight = 0;
 let vibeAuraAnimFrame = null;
+let vibeAuraCoverImage = null;
+let vibeAuraCoverUrl = '';
 const vibeAuraReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
 
 function initVibeAmbientAura() {
@@ -5083,6 +5085,8 @@ function updateVibeAmbientAura(coverUrl) {
   if (!coverUrl || coverUrl === PLACEHOLDER_COVER) {
     ambientWrap.style.removeProperty('--vibe-cover-image');
     ambientWrap.classList.remove('has-cover');
+    vibeAuraCoverImage = null;
+    vibeAuraCoverUrl = '';
     return;
   }
   let cover = String(coverUrl);
@@ -5090,6 +5094,16 @@ function updateVibeAmbientAura(coverUrl) {
   if (!cover.startsWith('http')) cover = `https://${cover}`;
   ambientWrap.style.setProperty('--vibe-cover-image', `url("${cover}")`);
   ambientWrap.classList.add('has-cover');
+  if (cover !== vibeAuraCoverUrl) {
+    vibeAuraCoverUrl = cover;
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      vibeAuraCoverImage = image;
+      startAuraLoop();
+    };
+    image.src = cover;
+  }
 }
 
 function getAudioSpectrumData() {
@@ -5149,8 +5163,9 @@ function startAuraLoop() {
 function renderAuraFrame() {
   // Soft, flowing color haze; unlike the old visualizer this draws no hard rings or ribbons.
   vibeAuraAnimFrame = 0;
-  if (!vibeAuraCtx || !auraViewIsActive()) return;
+  if (!vibeAuraCtx) return;
   if (!vibeAuraReducedMotion) vibeAuraAnimFrame = requestAnimationFrame(renderAuraFrame);
+  if (!auraViewIsActive()) return;
 
   const now = Date.now();
   const audio = vibeAuraReducedMotion
@@ -5164,20 +5179,48 @@ function renderAuraFrame() {
   const cx = vibeAuraWidth * 0.5;
   const cy = heroRect ? heroRect.top - canvasRect.top + heroRect.height * 0.57 : vibeAuraHeight * 0.42;
   const radius = Math.min(vibeAuraWidth * 0.72, vibeAuraHeight * 0.68) * audio.pulse;
-  const phase = vibeAuraReducedMotion ? 0 : now * 0.00012;
+  const phase = vibeAuraReducedMotion ? 0 : now * 0.00042;
   const pools = [
     { dx: 0, dy: 0, sx: 1.08, sy: 0.82, opacity: 0.3, phase: 0 },
     { dx: -0.32, dy: -0.06, sx: 0.8, sy: 1.0, opacity: 0.21, phase: 2.1 },
     { dx: 0.32, dy: 0.04, sx: 0.86, sy: 0.76, opacity: 0.21, phase: 4.0 }
   ];
 
+  // Move blurred copies of the current cover itself. This keeps the aura's
+  // palette tied to the track artwork instead of introducing fixed colors.
+  if (vibeAuraCoverImage?.complete && vibeAuraCoverImage.naturalWidth) {
+    const image = vibeAuraCoverImage;
+    const imageScale = Math.max(vibeAuraWidth / image.naturalWidth, vibeAuraHeight / image.naturalHeight) * 1.55;
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.filter = 'blur(34px) saturate(1.8) brightness(1.08)';
+    [
+      { alpha: 0.34, x: 0.5, y: 0.47, scale: 1.02, phase: 0 },
+      { alpha: 0.22, x: 0.34, y: 0.52, scale: 1.15, phase: 2.1 },
+      { alpha: 0.22, x: 0.67, y: 0.43, scale: 1.1, phase: 4.0 }
+    ].forEach((layer) => {
+      const driftX = Math.sin(phase + layer.phase) * vibeAuraWidth * 0.09;
+      const driftY = Math.cos(phase * 0.78 + layer.phase) * vibeAuraHeight * 0.07;
+      const scale = imageScale * layer.scale * (1 + audio.level * 0.08);
+      ctx.globalAlpha = layer.alpha * (0.82 + audio.level * 0.45);
+      ctx.save();
+      ctx.translate(vibeAuraWidth * layer.x + driftX, vibeAuraHeight * layer.y + driftY);
+      ctx.rotate(Math.sin(phase * 0.7 + layer.phase) * 0.12);
+      ctx.drawImage(image, -image.naturalWidth * scale * 0.5, -image.naturalHeight * scale * 0.5,
+        image.naturalWidth * scale, image.naturalHeight * scale);
+      ctx.restore();
+    });
+    ctx.restore();
+    ctx.filter = 'none';
+  }
+
   ctx.globalCompositeOperation = 'screen';
   pools.forEach((pool) => {
-    const x = cx + pool.dx * vibeAuraWidth * 0.38 + Math.sin(phase + pool.phase + audio.mids * 2) * vibeAuraWidth * (0.025 + audio.mids * 0.035);
-    const y = cy + pool.dy * vibeAuraHeight + Math.cos(phase * 0.8 + pool.phase + audio.highs) * vibeAuraHeight * (0.02 + audio.highs * 0.025);
+    const x = cx + pool.dx * vibeAuraWidth * 0.38 + Math.sin(phase + pool.phase + audio.mids * 2) * vibeAuraWidth * (0.04 + audio.mids * 0.06);
+    const y = cy + pool.dy * vibeAuraHeight + Math.cos(phase * 0.8 + pool.phase + audio.highs) * vibeAuraHeight * (0.035 + audio.highs * 0.04);
     ctx.save();
     ctx.translate(x, y);
-    ctx.rotate(Math.sin(phase + pool.phase) * 0.12);
+    ctx.rotate(Math.sin(phase + pool.phase) * 0.2);
     ctx.scale(pool.sx, pool.sy);
     const gradient = ctx.createRadialGradient(0, 0, radius * 0.025, 0, 0, radius);
     // Neutral canvas pulses let the blurred cover layer supply the actual hue.
