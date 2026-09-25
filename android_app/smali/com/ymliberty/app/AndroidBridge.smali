@@ -236,7 +236,7 @@
     return-void
 .end method
 .method public getDownloadedTrackUrl(Ljava/lang/String;)Ljava/lang/String;
-    .registers 8
+    .registers 9
     .annotation runtime Landroid/webkit/JavascriptInterface;
     .end annotation
 
@@ -257,16 +257,39 @@
     iget-object v0, p0, Lcom/ymliberty/app/AndroidBridge;->mContext:Landroid/content/Context;
     sget-object v1, Landroid/os/Environment;->DIRECTORY_MUSIC:Ljava/lang/String;
     invoke-virtual {v0, v1}, Landroid/content/Context;->getExternalFilesDir(Ljava/lang/String;)Ljava/io/File;
-    move-result-object v0
-    if-eqz v0, :cond_download_url_fail
-    new-instance v1, Ljava/io/File;
-    invoke-direct {v1, v0, p1}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
-    invoke-virtual {v1}, Ljava/io/File;->isFile()Z
+    move-result-object v1
+    if-eqz v1, :cond_download_cache
+    new-instance v2, Ljava/io/File;
+    invoke-direct {v2, v1, p1}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+    invoke-virtual {v2}, Ljava/io/File;->isFile()Z
+    move-result v0
+    if-eqz v0, :cond_download_cache
+    const/4 v3, 0x0
+    goto :cond_download_url_ready
+
+    :cond_download_cache
+    iget-object v0, p0, Lcom/ymliberty/app/AndroidBridge;->mContext:Landroid/content/Context;
+    invoke-virtual {v0}, Landroid/content/Context;->getCacheDir()Ljava/io/File;
+    move-result-object v1
+    if-eqz v1, :cond_download_url_fail
+    new-instance v2, Ljava/io/File;
+    const-string v4, "ym-downloads"
+    invoke-direct {v2, v1, v4}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+    move-object v1, v2
+    new-instance v2, Ljava/io/File;
+    invoke-direct {v2, v1, p1}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+    invoke-virtual {v2}, Ljava/io/File;->isFile()Z
     move-result v0
     if-eqz v0, :cond_download_url_fail
+    const/4 v3, 0x1
+
+    :cond_download_url_ready
 
     new-instance v0, Ljava/lang/StringBuilder;
     const-string v1, "https://offline.local/audio/"
+    if-eqz v3, :cond_download_prefix_ready
+    const-string v1, "https://offline.local/cache/"
+    :cond_download_prefix_ready
     invoke-direct {v0, v1}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
     invoke-static {p1}, Landroid/net/Uri;->encode(Ljava/lang/String;)Ljava/lang/String;
     move-result-object v1
@@ -316,6 +339,24 @@
     move v8, v0
 
     :cond_delete_public
+    if-nez v8, :cond_delete_media_store
+    iget-object v0, p0, Lcom/ymliberty/app/AndroidBridge;->mContext:Landroid/content/Context;
+    invoke-virtual {v0}, Landroid/content/Context;->getCacheDir()Ljava/io/File;
+    move-result-object v0
+    if-eqz v0, :cond_delete_media_store
+    new-instance v2, Ljava/io/File;
+    const-string v3, "ym-downloads"
+    invoke-direct {v2, v0, v3}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+    new-instance v1, Ljava/io/File;
+    invoke-direct {v1, v2, p1}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+    invoke-virtual {v1}, Ljava/io/File;->isFile()Z
+    move-result v0
+    if-eqz v0, :cond_delete_media_store
+    invoke-virtual {v1}, Ljava/io/File;->delete()Z
+    move-result v8
+    return v8
+
+    :cond_delete_media_store
     :try_start_public_delete
     iget-object v2, p0, Lcom/ymliberty/app/AndroidBridge;->mContext:Landroid/content/Context;
     invoke-virtual {v2}, Landroid/content/Context;->getContentResolver()Landroid/content/ContentResolver;

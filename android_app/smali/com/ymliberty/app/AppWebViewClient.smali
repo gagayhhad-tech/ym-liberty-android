@@ -100,7 +100,18 @@
     const-string v0, "https://offline.local/audio/"
     invoke-virtual {p2, v0}, Ljava/lang/String;->startsWith(Ljava/lang/String;)Z
     move-result v0
+    if-eqz v0, :cond_offline_cache_route
+    const/4 v9, 0x0
+    goto :cond_offline_route_ready
+
+    :cond_offline_cache_route
+    const-string v0, "https://offline.local/cache/"
+    invoke-virtual {p2, v0}, Ljava/lang/String;->startsWith(Ljava/lang/String;)Z
+    move-result v0
     if-eqz v0, :cond_offline_none
+    const/4 v9, 0x1
+
+    :cond_offline_route_ready
 
     :try_start_offline
     invoke-static {p2}, Landroid/net/Uri;->parse(Ljava/lang/String;)Landroid/net/Uri;
@@ -123,9 +134,22 @@
 
     invoke-virtual {p1}, Landroid/webkit/WebView;->getContext()Landroid/content/Context;
     move-result-object v0
+    if-eqz v9, :cond_offline_public_dir
+    invoke-virtual {v0}, Landroid/content/Context;->getCacheDir()Ljava/io/File;
+    move-result-object v2
+    if-eqz v2, :cond_offline_none
+    new-instance v3, Ljava/io/File;
+    const-string v4, "ym-downloads"
+    invoke-direct {v3, v2, v4}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+    move-object v2, v3
+    goto :cond_offline_dir_ready
+
+    :cond_offline_public_dir
     sget-object v2, Landroid/os/Environment;->DIRECTORY_MUSIC:Ljava/lang/String;
     invoke-virtual {v0, v2}, Landroid/content/Context;->getExternalFilesDir(Ljava/lang/String;)Ljava/io/File;
     move-result-object v2
+
+    :cond_offline_dir_ready
     if-eqz v2, :cond_offline_none
     new-instance v3, Ljava/io/File;
     invoke-direct {v3, v2, v1}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V

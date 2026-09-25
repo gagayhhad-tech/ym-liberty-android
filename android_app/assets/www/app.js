@@ -3051,22 +3051,24 @@ function renderDownloadedTracks() {
     return;
   }
   list.innerHTML = tracks.map(track =>
-    '<div class="track-item downloaded-track-item" data-track-id="' + escapeHtml(track.id) + '">' +
-      '<div class="track-download-art"><i class="bi bi-music-note-beamed"></i></div>' +
+    '<div class="track-item downloaded-track-item" data-track-id="' + escapeHtml(track.id) + '" data-file-name="' + escapeHtml(track.fileName) + '">' +
+      '<img src="' + escapeHtml(track.coverUri || PLACEHOLDER_COVER) + '" alt="" loading="lazy" onerror="this.src=\'favicon.png\'">' +
       '<div class="track-info"><div class="track-title">' + escapeHtml(track.title || '\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0439 \u0442\u0440\u0435\u043a') + '</div>' +
-      '<div class="track-artist">' + escapeHtml(track.artist || '\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0439 \u0430\u0440\u0442\u0438\u0441\u0442') + '</div></div>' +
+      '<div class="track-artist">' + escapeHtml(track.artist || '\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0439 \u0430\u0440\u0442\u0438\u0441\u0442') +
+      (track.toCache ? ' (\u043a\u044d\u0448)' : '') + '</div></div>' +
       '<button type="button" class="downloaded-track-action" data-action="play" aria-label="\u0412\u043e\u0441\u043f\u0440\u043e\u0438\u0437\u0432\u0435\u0441\u0442\u0438"><i class="bi bi-play-circle-fill"></i></button>' +
       '<button type="button" class="downloaded-track-action" data-action="delete" aria-label="\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0443"><i class="bi bi-trash3"></i></button>' +
     '</div>'
   ).join('');
   list.querySelectorAll('.downloaded-track-item').forEach(row => {
     const trackId = row.dataset.trackId;
-    row.querySelector('[data-action="play"]')?.addEventListener('click', () => playDownloadedTrack(trackId));
-    row.querySelector('[data-action="delete"]')?.addEventListener('click', () => deleteDownloadedTrack(trackId));
+    const fileName = row.dataset.fileName;
+    row.querySelector('[data-action="play"]')?.addEventListener('click', () => playDownloadedTrack(trackId, fileName));
+    row.querySelector('[data-action="delete"]')?.addEventListener('click', () => deleteDownloadedTrack(trackId, fileName));
   });
 }
 
-function playDownloadedTrack(trackId) {
+function playDownloadedTrack(trackId, fileName) {
   const bridge = window.AndroidBridge;
   if (!bridge || typeof bridge.getDownloadedTrackUrl !== 'function') {
     showToast('\u041e\0444\043b\0430\0439\043d-\0432\043e\0441\043f\0440\043e\0438\0437\0432\0435\0434\0435\043d\0438\0435 \0434\043e\0441\0442\0443\043f\043d\043e \0432 \043f\0440\0438\043b\043e\0436\0435\u043d\u0438\u0438', 'bi-exclamation-circle');
@@ -3075,10 +3077,16 @@ function playDownloadedTrack(trackId) {
   state.queue = getDownloadedTrackRegistry().map(track => {
     let offlineUrl = '';
     try { offlineUrl = bridge.getDownloadedTrackUrl(track.fileName) || ''; } catch (_) {}
-    return { id: String(track.id), title: track.title, artists: track.artist || '', offlineUrl, coverUri: PLACEHOLDER_COVER, explicit: false, isLiberty: false };
+    return {
+      id: String(track.id), title: track.title, artists: track.artist || '', offlineUrl,
+      offlineFileName: track.fileName, coverUri: track.coverUri || PLACEHOLDER_COVER,
+      explicit: false, isLiberty: false
+    };
   }).filter(track => track.offlineUrl);
   state.queueMode = 'downloads';
-  state.queueIndex = state.queue.findIndex(track => String(track.id) === String(trackId));
+  state.queueIndex = state.queue.findIndex(track =>
+    String(track.id) === String(trackId) && track.offlineFileName === fileName
+  );
   if (state.queueIndex < 0) {
     showToast('\u0417\0430\0433\0440\0443\0436\0435\043d\043d\044b\0439 \0444\0430\0439\043b \043d\0435 \043d\0430\0439\0434\0435\043d \043d\0430 \0443\0441\0442\0440\043e\0439\u0441\0442\0432\0435', 'bi-exclamation-triangle');
     return;
@@ -3087,8 +3095,10 @@ function playDownloadedTrack(trackId) {
   playQueueTrack(state.queue[state.queueIndex]);
 }
 
-function deleteDownloadedTrack(trackId) {
-  const record = getDownloadedTrackRegistry().find(track => String(track.id) === String(trackId));
+function deleteDownloadedTrack(trackId, fileName) {
+  const record = getDownloadedTrackRegistry().find(track =>
+    String(track.id) === String(trackId) && track.fileName === fileName
+  );
   if (!record) return;
   const bridge = window.AndroidBridge;
   if (!bridge || typeof bridge.deleteDownloadedTrack !== 'function') {
@@ -3101,11 +3111,19 @@ function deleteDownloadedTrack(trackId) {
     showToast('\u041d\0435 \0443\0434\0430\043b\043e\0441\044c \0443\0434\0430\043b\0438\0442\044c \0444\0430\0439\043b \0437\0430\0433\0440\0443\0437\043a\0438', 'bi-exclamation-triangle');
     return;
   }
-  localStorage.setItem(DOWNLOADED_TRACKS_KEY, JSON.stringify(getDownloadedTrackRegistry().filter(track => String(track.id) !== String(trackId))));
-  localStorage.removeItem('ym_downloaded_track:' + String(trackId));
+  const remaining = getDownloadedTrackRegistry().filter(track =>
+    !(String(track.id) === String(trackId) && track.fileName === record.fileName)
+  );
+  localStorage.setItem(DOWNLOADED_TRACKS_KEY, JSON.stringify(remaining));
+  if (!remaining.some(track => String(track.id) === String(trackId))) {
+    localStorage.removeItem('ym_downloaded_track:' + String(trackId));
+  }
   localStorage.removeItem(downloadStorageKey(record.fileName));
   renderDownloadedTracks();
-  if (state.currentTrack && String(state.currentTrack.id) === String(trackId)) { activePlayer.pause(); state.isPlaying = false; updatePlayButtons(); }
+  if (state.currentTrack && String(state.currentTrack.id) === String(trackId) &&
+      state.currentTrack.track?.offlineFileName === record.fileName) {
+    activePlayer.pause(); state.isPlaying = false; updatePlayButtons();
+  }
 }
 
 async function fetchPlaylists() {
@@ -3173,6 +3191,10 @@ function downloadStorageKey(fileName) {
   return `ym_downloaded:${fileName}`;
 }
 
+function downloadVariantKey(trackId, toCache) {
+  return `${String(trackId)}:${toCache ? 'cache' : 'library'}`;
+}
+
 const DOWNLOADED_TRACKS_KEY = 'ym_downloaded_tracks_v1';
 const pendingDownloadMetadata = new Map();
 const activeDownloadIds = new Set();
@@ -3188,9 +3210,16 @@ function getDownloadedTrackRegistry() {
 
 function isTrackDownloaded(trackId, artist, title) {
   if (trackId && localStorage.getItem(`ym_downloaded_track:${String(trackId)}`) === '1') return true;
+  if (trackId && getDownloadedTrackRegistry().some(item => String(item.id) === String(trackId))) return true;
   return Boolean(artist && title && localStorage.getItem(
     downloadStorageKey(buildDownloadFileName(artist, title, 'flac'))
   ) === '1');
+}
+
+function hasDownloadedVariant(trackId, toCache) {
+  return getDownloadedTrackRegistry().some(item =>
+    String(item.id) === String(trackId) && Boolean(item.toCache) === Boolean(toCache)
+  );
 }
 
 function setDownloadButtonsProgress(percent, active) {
@@ -3205,7 +3234,7 @@ function setDownloadButtonsProgress(percent, active) {
 window.onTrackDownloadProgress = function(fileName, percent, done, error) {
   if (error) {
     const metadata = pendingDownloadMetadata.get(fileName);
-    if (metadata) activeDownloadIds.delete(metadata.id);
+    if (metadata) activeDownloadIds.delete(downloadVariantKey(metadata.id, metadata.toCache));
     pendingDownloadMetadata.delete(fileName);
     setDownloadButtonsProgress(0, false);
     showToast(`Ошибка загрузки: ${error}`, 'bi-exclamation-triangle');
@@ -3215,11 +3244,13 @@ window.onTrackDownloadProgress = function(fileName, percent, done, error) {
   if (done) {
     const metadata = pendingDownloadMetadata.get(fileName);
     pendingDownloadMetadata.delete(fileName);
-    if (metadata && !metadata.toCache) {
-      activeDownloadIds.delete(metadata.id);
+    if (metadata) {
+      activeDownloadIds.delete(downloadVariantKey(metadata.id, metadata.toCache));
       localStorage.setItem(downloadStorageKey(fileName), '1');
       localStorage.setItem(`ym_downloaded_track:${metadata.id}`, '1');
-      const records = getDownloadedTrackRegistry().filter(item => String(item.id) !== String(metadata.id));
+      const records = getDownloadedTrackRegistry().filter(item =>
+        !(String(item.id) === String(metadata.id) && item.fileName === fileName)
+      );
       records.unshift({ ...metadata, fileName, completedAt: Date.now() });
       try { localStorage.setItem(DOWNLOADED_TRACKS_KEY, JSON.stringify(records)); } catch (_) {}
       if (document.getElementById('library-downloads-view')?.style.display !== 'none') {
@@ -3258,8 +3289,9 @@ function detectAudioFormat(streamUrl) {
 async function enqueueTrackDownload(track, artistName, trackId, toCache) {
   if (!trackId || !state.token) return false;
   if (!(window.AndroidBridge && typeof window.AndroidBridge.downloadTrack === 'function')) return false;
-  if (!toCache && isTrackDownloaded(trackId)) return true;
-  if (!toCache && activeDownloadIds.has(String(trackId))) return true;
+  if (hasDownloadedVariant(trackId, toCache)) return true;
+  const activeKey = downloadVariantKey(trackId, toCache);
+  if (activeDownloadIds.has(activeKey)) return true;
 
   let streamUrl;
   let downloadInfo;
@@ -3298,27 +3330,37 @@ async function enqueueTrackDownload(track, artistName, trackId, toCache) {
     : detectAudioFormat(streamUrl);
   const title = track.title || track.track?.title || 'Трек';
   const artist = artistName || (typeof track.artists === 'string' ? track.artists : '') || '';
-  const fileName = buildDownloadFileName(artist, title, ext, trackId);
+  const publicFileName = buildDownloadFileName(artist, title, ext, trackId);
+  // Keep cache and Music downloads distinct even if both happen to use the
+  // same codec; the native bridge can then resolve/delete by filename safely.
+  const fileName = toCache
+    ? publicFileName.replace(/(\.[^.]+)$/, ' [cache]$1')
+    : publicFileName;
+  let coverUri = track.coverUri || track.cover || track.track?.coverUri ||
+    track.track?.cover || track.track?.albums?.[0]?.coverUri || '';
+  if (coverUri && coverUri.includes('%%')) coverUri = `https://${coverUri.replace('%%', '400x400')}`;
+  else if (coverUri && !coverUri.startsWith('http')) coverUri = `https://${coverUri}`;
   pendingDownloadMetadata.set(fileName, {
     id: String(trackId),
     title: String(title),
     artist: String(artist),
+    coverUri,
     mime,
     toCache: Boolean(toCache)
   });
-  if (!toCache) activeDownloadIds.add(String(trackId));
+  activeDownloadIds.add(activeKey);
 
   try {
     const ok = Boolean(window.AndroidBridge.downloadTrack(streamUrl, fileName, mime, toCache, downloadInfo.keyBase64));
     if (!ok) {
       pendingDownloadMetadata.delete(fileName);
-      activeDownloadIds.delete(String(trackId));
+      activeDownloadIds.delete(activeKey);
     }
     ylog('DOWNLOAD', `bridge enqueue track=${trackId} ok=${ok} cache=${Boolean(toCache)} file=${fileName}`);
     return ok;
   } catch (e) {
     pendingDownloadMetadata.delete(fileName);
-    activeDownloadIds.delete(String(trackId));
+    activeDownloadIds.delete(activeKey);
     ylogError('DOWNLOAD', `bridge exception track=${trackId}: ${e?.message || e}`);
     return false;
   }
@@ -5007,17 +5049,6 @@ let vibeAuraCtx = null;
 let vibeAuraWidth = 0;
 let vibeAuraHeight = 0;
 let vibeAuraAnimFrame = null;
-let auraCurrentColors = [
-  { r: 0, g: 226, b: 90 },    // Wave green
-  { r: 255, g: 213, b: 0 },   // Warm yellow
-  { r: 207, g: 0, b: 236 }    // Magenta
-];
-let auraTargetColors = [
-  { r: 0, g: 226, b: 90 },
-  { r: 255, g: 213, b: 0 },
-  { r: 207, g: 0, b: 236 }
-];
-let auraCoverRequestSeq = 0;
 
 function initVibeAmbientAura() {
   vibeAuraCanvas = document.getElementById('vibe-ambient-canvas');
@@ -5046,65 +5077,18 @@ function initVibeAmbientAura() {
 }
 
 function updateVibeAmbientAura(coverUrl) {
-  if (!coverUrl || coverUrl === PLACEHOLDER_COVER) return;
-  const requestSeq = ++auraCoverRequestSeq;
   const ambientWrap = document.getElementById('vibe-ambient-wrap');
-  if (ambientWrap) {
-    let normalizedCover = String(coverUrl);
-    if (normalizedCover.includes('%%')) normalizedCover = normalizedCover.replace('%%', '400x400');
-    if (!normalizedCover.startsWith('http')) normalizedCover = `https://${normalizedCover}`;
-    ambientWrap.style.setProperty('--vibe-cover-image', `url("${normalizedCover}")`);
-    ambientWrap.classList.add('has-cover');
+  if (!ambientWrap) return;
+  if (!coverUrl || coverUrl === PLACEHOLDER_COVER) {
+    ambientWrap.style.removeProperty('--vibe-cover-image');
+    ambientWrap.classList.remove('has-cover');
+    return;
   }
-  try {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      if (requestSeq !== auraCoverRequestSeq) return;
-      try {
-        const offCanvas = document.createElement('canvas');
-        offCanvas.width = 16;
-        offCanvas.height = 16;
-        const offCtx = offCanvas.getContext('2d');
-        offCtx.drawImage(img, 0, 0, 16, 16);
-        const data = offCtx.getImageData(0, 0, 16, 16).data;
-        const candidates = [];
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i], g = data[i+1], b = data[i+2];
-          const max = Math.max(r, g, b), min = Math.min(r, g, b);
-          const sat = max === 0 ? 0 : (max - min) / max;
-          const lum = (r * 299 + g * 587 + b * 114) / 1000;
-          if (lum > 25 && lum < 235 && sat > 0.15) {
-            candidates.push({ r, g, b, sat, lum });
-          }
-        }
-        candidates.sort((a, b) => b.sat - a.sat);
-        if (candidates.length >= 3) {
-          auraTargetColors[0] = { r: candidates[0].r, g: candidates[0].g, b: candidates[0].b };
-          auraTargetColors[1] = { r: candidates[Math.floor(candidates.length / 3)].r, g: candidates[Math.floor(candidates.length / 3)].g, b: candidates[Math.floor(candidates.length / 3)].b };
-          auraTargetColors[2] = { r: candidates[Math.floor(candidates.length * 2 / 3)].r, g: candidates[Math.floor(candidates.length * 2 / 3)].g, b: candidates[Math.floor(candidates.length * 2 / 3)].b };
-        } else if (candidates.length >= 1) {
-          const p = candidates[0];
-          auraTargetColors[0] = { r: p.r, g: p.g, b: p.b };
-          auraTargetColors[1] = { r: Math.min(255, p.r + 30), g: Math.max(0, p.g - 20), b: Math.min(255, p.b + 60) };
-          auraTargetColors[2] = { r: Math.max(0, p.r - 40), g: Math.min(255, p.g + 50), b: Math.min(255, p.b + 20) };
-        }
-      } catch (e) {
-        console.warn('Cannot sample cover color (canvas/CORS):', e);
-      }
-    };
-    img.onerror = (e) => {
-      if (requestSeq === auraCoverRequestSeq) {
-        console.warn('Cannot load cover for Wave colors:', e);
-      }
-    };
-    // Keep the original direct-image path. Cover sampling worked this way
-    // before; sending it through the updater backend added an unnecessary
-    // deployment dependency and changed which cache/CORS path WebView uses.
-    img.src = coverUrl;
-  } catch (e) {
-    console.warn('Cannot create cover sampler:', e);
-  }
+  let cover = String(coverUrl);
+  if (cover.includes('%%')) cover = cover.replace('%%', '400x400');
+  if (!cover.startsWith('http')) cover = `https://${cover}`;
+  ambientWrap.style.setProperty('--vibe-cover-image', `url("${cover}")`);
+  ambientWrap.classList.add('has-cover');
 }
 
 function getAudioSpectrumData() {
@@ -5169,12 +5153,6 @@ function renderAuraFrame() {
 
   const now = Date.now();
   const audio = getAudioSpectrumData();
-  for (let i = 0; i < 3; i++) {
-    auraCurrentColors[i].r += (auraTargetColors[i].r - auraCurrentColors[i].r) * 0.035;
-    auraCurrentColors[i].g += (auraTargetColors[i].g - auraCurrentColors[i].g) * 0.035;
-    auraCurrentColors[i].b += (auraTargetColors[i].b - auraCurrentColors[i].b) * 0.035;
-  }
-
   const ctx = vibeAuraCtx;
   ctx.clearRect(0, 0, vibeAuraWidth, vibeAuraHeight);
   const hero = document.querySelector('.vibe-hero');
@@ -5185,14 +5163,13 @@ function renderAuraFrame() {
   const radius = Math.min(vibeAuraWidth * 0.72, vibeAuraHeight * 0.68) * audio.pulse;
   const phase = now * 0.00012;
   const pools = [
-    { dx: 0, dy: 0, sx: 1.08, sy: 0.82, color: 1, opacity: 0.77, phase: 0 },
-    { dx: -0.32, dy: -0.06, sx: 0.8, sy: 1.0, color: 2, opacity: 0.58, phase: 2.1 },
-    { dx: 0.32, dy: 0.04, sx: 0.86, sy: 0.76, color: 0, opacity: 0.56, phase: 4.0 }
+    { dx: 0, dy: 0, sx: 1.08, sy: 0.82, opacity: 0.22, phase: 0 },
+    { dx: -0.32, dy: -0.06, sx: 0.8, sy: 1.0, opacity: 0.15, phase: 2.1 },
+    { dx: 0.32, dy: 0.04, sx: 0.86, sy: 0.76, opacity: 0.15, phase: 4.0 }
   ];
 
   ctx.globalCompositeOperation = 'screen';
   pools.forEach((pool) => {
-    const color = auraCurrentColors[pool.color];
     const x = cx + pool.dx * vibeAuraWidth * 0.38 + Math.sin(phase + pool.phase + audio.mids * 2) * vibeAuraWidth * (0.025 + audio.mids * 0.035);
     const y = cy + pool.dy * vibeAuraHeight + Math.cos(phase * 0.8 + pool.phase + audio.highs) * vibeAuraHeight * (0.02 + audio.highs * 0.025);
     ctx.save();
@@ -5200,7 +5177,8 @@ function renderAuraFrame() {
     ctx.rotate(Math.sin(phase + pool.phase) * 0.12);
     ctx.scale(pool.sx, pool.sy);
     const gradient = ctx.createRadialGradient(0, 0, radius * 0.025, 0, 0, radius);
-    const rgb = Math.round(color.r) + ',' + Math.round(color.g) + ',' + Math.round(color.b);
+    // Neutral canvas pulses let the blurred cover layer supply the actual hue.
+    const rgb = '255,255,255';
     const reactiveOpacity = pool.opacity * (0.78 + audio.level * 0.55);
     gradient.addColorStop(0, 'rgba(' + rgb + ',' + reactiveOpacity + ')');
     gradient.addColorStop(0.22, 'rgba(' + rgb + ',' + (reactiveOpacity * 0.72) + ')');

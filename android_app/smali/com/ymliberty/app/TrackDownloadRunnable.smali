@@ -108,6 +108,10 @@
     if-eqz v3, :cond_music_dir
     invoke-virtual {v2}, Landroid/content/Context;->getCacheDir()Ljava/io/File;
     move-result-object v2
+    new-instance v3, Ljava/io/File;
+    const-string v4, "ym-downloads"
+    invoke-direct {v3, v2, v4}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
+    move-object v2, v3
     goto :cond_dir_ready
 
     :cond_music_dir

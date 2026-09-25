@@ -880,13 +880,9 @@ input[type=range]::-webkit-slider-thumb {
   left: 50%;
   top: 57%;
   transform: translate(-50%, -50%);
-  background:
-    radial-gradient(ellipse at 52% 53%, rgba(255, 218, 0, .98) 0 11%, rgba(255, 194, 0, .62) 24%, transparent 52%),
-    radial-gradient(ellipse at 48% 15%, rgba(0, 220, 74, .9) 0 8%, rgba(0, 196, 59, .45) 32%, transparent 64%),
-    radial-gradient(ellipse at 8% 48%, rgba(190, 0, 245, .86) 0 10%, rgba(170, 0, 220, .42) 34%, transparent 67%),
-    radial-gradient(ellipse at 92% 62%, rgba(0, 180, 220, .65) 0 8%, transparent 54%);
-  filter: blur(58px) saturate(1.25);
-  opacity: .78;
+  background: radial-gradient(ellipse, rgba(255,255,255,.2), transparent 68%);
+  filter: blur(62px);
+  opacity: .28;
   border-radius: 50%;
   pointer-events: none;
   animation: waveGlowDrift 16s ease-in-out infinite alternate;
@@ -991,6 +987,7 @@ input[type=range]::-webkit-slider-thumb {
   pointer-events: none;
   z-index: 0;
   overflow: hidden;
+  isolation: isolate;
   opacity: 0.98;
   transition: opacity 0.6s ease;
   -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 48%, transparent 100%);
@@ -1001,18 +998,18 @@ input[type=range]::-webkit-slider-thumb {
   content: "";
   position: absolute;
   inset: -18%;
-  z-index: -1;
+  z-index: 0;
   opacity: 0;
   background-image: var(--vibe-cover-image);
   background-size: cover;
   background-position: center;
-  filter: blur(58px) saturate(1.45) brightness(.72);
-  transform: scale(1.15);
+  filter: blur(48px) saturate(1.65) brightness(.84);
+  transform: scale(1.22);
   transition: opacity .8s ease, filter .8s ease;
   mix-blend-mode: screen;
 }
 .vibe-ambient-wrap.has-cover::before {
-  opacity: .68;
+  opacity: .92;
 }
 
 .vibe-ambient-canvas {
@@ -1022,9 +1019,10 @@ input[type=range]::-webkit-slider-thumb {
   width: 100%;
   height: 100%;
   display: block;
+  z-index: 1;
   transform: translateZ(0);
   pointer-events: none;
-  opacity: .72;
+  opacity: .32;
   mix-blend-mode: screen;
 }
 
