@@ -4704,8 +4704,8 @@ function getAppVersionInfo() {
   // in AndroidManifest.xml. They previously read 4 / '1.0.3', which made a
   // failed bridge lookup silently claim an ancient version and could hide or
   // fake an update.
-  let versionCode = 46;
-  let versionName = '1.1.29';
+  let versionCode = 47;
+  let versionName = '1.1.30';
   if (window.AndroidBridge) {
     if (typeof window.AndroidBridge.getVersionCode === 'function') {
       try {
@@ -5177,8 +5177,8 @@ function renderAuraFrame() {
   const heroRect = hero?.getBoundingClientRect();
   const canvasRect = vibeAuraCanvas.getBoundingClientRect();
   const cx = vibeAuraWidth * 0.5;
-  const cy = heroRect ? heroRect.top - canvasRect.top + heroRect.height * 0.57 : vibeAuraHeight * 0.42;
-  const radius = Math.min(vibeAuraWidth * 0.72, vibeAuraHeight * 0.68) * audio.pulse;
+  const cy = heroRect ? heroRect.top - canvasRect.top + heroRect.height * 0.54 : vibeAuraHeight * 0.4;
+  const radius = Math.min(vibeAuraWidth * 0.68, vibeAuraHeight * 0.58) * (1 + audio.level * 0.42);
   const phase = vibeAuraReducedMotion ? 0 : now * 0.00042;
   const pools = [
     { dx: 0, dy: 0, sx: 1.08, sy: 0.82, opacity: 0.3, phase: 0 },
@@ -5190,17 +5190,17 @@ function renderAuraFrame() {
   // palette tied to the track artwork instead of introducing fixed colors.
   if (vibeAuraCoverImage?.complete && vibeAuraCoverImage.naturalWidth) {
     const image = vibeAuraCoverImage;
-    const imageScale = Math.max(vibeAuraWidth / image.naturalWidth, vibeAuraHeight / image.naturalHeight) * 1.55;
+    const imageScale = Math.max(vibeAuraWidth * 0.72 / image.naturalWidth, vibeAuraHeight * 0.52 / image.naturalHeight) * 1.25;
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
     ctx.filter = 'blur(34px) saturate(1.8) brightness(1.08)';
     [
-      { alpha: 0.34, x: 0.5, y: 0.47, scale: 1.02, phase: 0 },
-      { alpha: 0.22, x: 0.34, y: 0.52, scale: 1.15, phase: 2.1 },
-      { alpha: 0.22, x: 0.67, y: 0.43, scale: 1.1, phase: 4.0 }
+      { alpha: 0.58, x: 0.5, y: 0.43, scale: 1.02, phase: 0 },
+      { alpha: 0.4, x: 0.32, y: 0.49, scale: 1.12, phase: 2.1 },
+      { alpha: 0.4, x: 0.68, y: 0.39, scale: 1.08, phase: 4.0 }
     ].forEach((layer) => {
-      const driftX = Math.sin(phase + layer.phase) * vibeAuraWidth * 0.09;
-      const driftY = Math.cos(phase * 0.78 + layer.phase) * vibeAuraHeight * 0.07;
+      const driftX = Math.sin(phase + layer.phase) * vibeAuraWidth * (0.08 + audio.mids * 0.08);
+      const driftY = Math.cos(phase * 0.78 + layer.phase) * vibeAuraHeight * (0.06 + audio.highs * 0.06);
       const scale = imageScale * layer.scale * (1 + audio.level * 0.08);
       ctx.globalAlpha = layer.alpha * (0.82 + audio.level * 0.45);
       ctx.save();
@@ -5236,6 +5236,14 @@ function renderAuraFrame() {
     ctx.fill();
     ctx.restore();
   });
+  ctx.globalCompositeOperation = 'destination-in';
+  const auraMask = ctx.createRadialGradient(cx, cy, radius * 0.18, cx, cy, radius * 1.18);
+  auraMask.addColorStop(0, 'rgba(255,255,255,1)');
+  auraMask.addColorStop(0.52, 'rgba(255,255,255,.94)');
+  auraMask.addColorStop(0.82, 'rgba(255,255,255,.42)');
+  auraMask.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = auraMask;
+  ctx.fillRect(0, 0, vibeAuraWidth, vibeAuraHeight);
   ctx.globalCompositeOperation = 'source-over';
 }
 
