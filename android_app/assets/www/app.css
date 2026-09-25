@@ -895,6 +895,7 @@ input[type=range]::-webkit-slider-thumb {
 @media (prefers-reduced-motion: reduce) {
   .vibe-hero::before { animation: none; }
 }
+
 .vibe-hero .vibe-animation {
   width: 38px;
   height: 48px;
@@ -995,32 +996,7 @@ input[type=range]::-webkit-slider-thumb {
 }
 
 .vibe-ambient-wrap::before {
-  content: "";
-  position: absolute;
-  left: 4%;
-  top: 8%;
-  width: 92%;
-  height: 76%;
-  z-index: 0;
-  opacity: 0;
-  background-image: var(--vibe-cover-image);
-  background-size: cover;
-  background-position: center;
-  filter: blur(58px) saturate(1.7) brightness(.7);
-  transform: scale(1.12);
-  transition: opacity .8s ease, filter .8s ease;
-  animation: vibeCoverDrift 14s ease-in-out infinite alternate;
-  mix-blend-mode: screen;
-  -webkit-mask-image: radial-gradient(ellipse at center, #000 0%, #000 46%, transparent 82%);
-  mask-image: radial-gradient(ellipse at center, #000 0%, #000 46%, transparent 82%);
-}
-.vibe-ambient-wrap.has-cover::before {
-  opacity: .16;
-}
-@keyframes vibeCoverDrift {
-  from { transform: scale(1.12) translate(-3%, -2%); }
-  50% { transform: scale(1.2, 1.12) translate(2%, 3%); }
-  to { transform: scale(1.15, 1.22) translate(4%, -2%); }
+  content: none;
 }
 
 .vibe-ambient-canvas {
@@ -1036,10 +1012,6 @@ input[type=range]::-webkit-slider-thumb {
   opacity: .9;
   mix-blend-mode: screen;
 }
-@media (prefers-reduced-motion: reduce) {
-  .vibe-ambient-wrap::before { animation: none; }
-}
-
 .vibe-container {
   position: relative;
   z-index: 2;
@@ -2504,4 +2476,974 @@ input[type=range]::-webkit-slider-thumb {
   height: 580px;
   -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 78%, transparent 100%);
   mask-image: linear-gradient(to bottom, #000 0%, #000 78%, transparent 100%);
+}
+
+/* ==========================================================================
+   YM Liberty visual system
+   This layer intentionally lives last: older screens contain legacy inline
+   styles and are kept for JS compatibility. The rules below unify the
+   presentation without changing the application state or playback logic.
+   ========================================================================== */
+:root {
+  --bg-color: #08090c;
+  --surface-color: #111318;
+  --surface-color-light: #1b1e25;
+  --surface-raised: rgba(24, 27, 34, .82);
+  --surface-soft: rgba(255, 255, 255, .055);
+  --surface-strong: rgba(255, 255, 255, .095);
+  --text-primary: #f7f8fb;
+  --text-secondary: #969ba8;
+  --text-tertiary: #6d7280;
+  --accent-color: #f4f6fb;
+  --accent-hover: #ffffff;
+  --danger-color: #ff5364;
+  --line-color: rgba(255, 255, 255, .085);
+  --line-soft: rgba(255, 255, 255, .055);
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --control-height: 44px;
+  --nav-base-height: 64px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --nav-height: calc(var(--nav-base-height) + var(--safe-bottom));
+  --mini-player-height: 64px;
+  --shadow-card: 0 14px 36px rgba(0, 0, 0, .24);
+  --shadow-float: 0 18px 48px rgba(0, 0, 0, .42);
+  --ease-standard: cubic-bezier(.2, .7, .2, 1);
+}
+
+html {
+  background: var(--bg-color);
+  color-scheme: dark;
+}
+
+body {
+  font-family: Inter, "SF Pro Display", "SF Pro Text", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background:
+    radial-gradient(ellipse 80% 45% at 50% -10%, rgba(80, 88, 116, .12), transparent 72%),
+    var(--bg-color);
+  color: var(--text-primary);
+  letter-spacing: -.01em;
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent-color) !important;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, .12) !important;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: .42;
+  filter: saturate(.55);
+}
+
+.view {
+  padding-bottom: calc(var(--nav-height) + var(--mini-player-height) + 28px);
+  scrollbar-width: none;
+}
+
+.view::-webkit-scrollbar,
+.tracks-list::-webkit-scrollbar {
+  display: none;
+}
+
+.top-header,
+.search-header-row {
+  min-height: 76px;
+  padding: calc(var(--safe-top) + 18px) 18px 14px !important;
+  background: linear-gradient(180deg, rgba(8, 9, 12, .96), rgba(8, 9, 12, .72) 72%, transparent);
+}
+
+.top-header h1,
+.search-header-row h1 {
+  font-size: clamp(25px, 7vw, 31px);
+  line-height: 1.1;
+  letter-spacing: -.045em;
+}
+
+.icon-btn,
+.top-search-btn,
+.search-back-btn {
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  min-width: var(--control-height);
+  min-height: var(--control-height);
+  border: 1px solid var(--line-color);
+  border-radius: 50%;
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform .18s var(--ease-standard), background .18s ease, border-color .18s ease;
+}
+
+.icon-btn:hover,
+.top-search-btn:hover,
+.search-back-btn:hover {
+  background: var(--surface-strong);
+  border-color: rgba(255, 255, 255, .16);
+}
+
+.icon-btn:active,
+.top-search-btn:active,
+.search-back-btn:active,
+.nav-btn:active,
+.track-dots:active,
+.vibe-chip:active,
+.play-circle-btn:active {
+  transform: scale(.94);
+}
+
+/* My Wave */
+#view-vibe {
+  background: linear-gradient(180deg, rgba(16, 18, 24, .2), transparent 38%);
+}
+
+.vibe-top-bar {
+  top: calc(var(--safe-top) + 14px);
+  right: 18px;
+}
+
+.vibe-container {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  padding: calc(var(--safe-top) + 78px) 0 28px;
+}
+
+.vibe-animation {
+  flex: 0 0 auto;
+  width: min(48vw, 168px);
+  height: min(48vw, 168px);
+  margin: 0 0 14px;
+}
+
+.vibe-container > .vibe-animation,
+.vibe-container > .vibe-title,
+.vibe-container > .vibe-subtitle,
+.vibe-container > .vibe-mood-chips,
+.vibe-container > .vibe-stats-panel,
+.vibe-container > .vibe-total-stats-row,
+.vibe-container > .vibe-sync-warning,
+.vibe-container > .vibe-new-releases {
+  grid-column: 1;
+}
+
+.vibe-animation::before {
+  content: "";
+  position: absolute;
+  inset: 15%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, .15), transparent 67%);
+  filter: blur(14px);
+  opacity: .65;
+}
+
+.vibe-play-btn {
+  width: 76px !important;
+  height: 76px !important;
+  min-width: 76px;
+  min-height: 76px;
+  padding: 0;
+  border-radius: 50% !important;
+  border: 1px solid rgba(255,255,255,.45);
+  box-shadow: 0 12px 38px rgba(0, 0, 0, .32), 0 0 0 8px rgba(255,255,255,.045);
+  transition: transform .18s var(--ease-standard), box-shadow .18s ease;
+}
+
+.vibe-title {
+  margin: 0 18px 7px;
+  font-size: clamp(30px, 9vw, 40px);
+  line-height: 1.05;
+  letter-spacing: -.06em;
+}
+
+.vibe-subtitle {
+  margin: 0 20px 18px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.vibe-mood-chips {
+  width: 100%;
+  gap: 8px;
+  padding: 5px 18px 18px;
+  overscroll-behavior-x: contain;
+}
+
+.vibe-chip {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--line-color);
+  border-radius: 999px;
+  background: rgba(255,255,255,.045);
+  color: var(--text-secondary);
+  font-size: 13px;
+  transition: transform .18s var(--ease-standard), background .18s ease, color .18s ease;
+}
+
+.vibe-chip.active {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #0a0b0e;
+  box-shadow: 0 6px 18px rgba(0,0,0,.2);
+}
+
+.vibe-stats-panel {
+  width: calc(100% - 36px);
+  margin: 2px 18px 14px;
+  padding: 4px;
+  gap: 2px;
+  border: 1px solid var(--line-color);
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,.045);
+  box-shadow: var(--shadow-card);
+}
+
+.vibe-stat-card {
+  min-width: 0;
+  padding: 13px 9px;
+  gap: 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+}
+
+.vibe-stat-card + .vibe-stat-card {
+  border-left: 1px solid var(--line-soft);
+}
+
+.stat-icon-wrap {
+  width: 30px;
+  height: 30px;
+  margin-bottom: 7px;
+  border-radius: 9px;
+  background: rgba(255,255,255,.08);
+  color: var(--accent-color);
+}
+
+.stat-value {
+  max-width: 100%;
+  font-size: clamp(15px, 4.2vw, 20px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.035em;
+}
+
+.stat-label {
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.vibe-total-stats-row {
+  width: calc(100% - 36px);
+  margin: 0 18px 22px;
+  gap: 8px;
+}
+
+.vibe-total-card {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 13px;
+  background: rgba(255,255,255,.028);
+}
+
+/* Shared sections and lists */
+.section-title {
+  padding: 0 18px;
+  margin: 22px 0 10px;
+  font-size: 17px;
+  letter-spacing: -.025em;
+}
+
+.library-content,
+.settings-content,
+.search-container {
+  padding-left: 18px !important;
+  padding-right: 18px !important;
+}
+
+.playlist-header,
+.settings-card,
+.settings-section,
+.eq-card {
+  border: 1px solid var(--line-color);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-card);
+}
+
+.playlist-header {
+  margin: 5px 0 14px;
+  padding: 14px;
+  border-bottom: 1px solid var(--line-color);
+}
+
+.playlist-cover {
+  width: 56px;
+  height: 56px;
+  border-radius: 13px;
+  margin-right: 12px;
+}
+
+.playlist-info h2 {
+  font-size: 16px;
+  letter-spacing: -.025em;
+}
+
+.playlist-info p,
+.account-info p {
+  color: var(--text-secondary);
+}
+
+.track-item {
+  min-height: 64px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line-soft);
+  transition: background .18s ease, transform .18s var(--ease-standard);
+}
+
+.track-item:active {
+  transform: scale(.985);
+  background: rgba(255,255,255,.045);
+}
+
+.track-item img {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  box-shadow: 0 5px 14px rgba(0,0,0,.22);
+}
+
+.track-title {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.track-artist {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.track-dots {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+}
+
+.release-card {
+  border: 1px solid var(--line-color);
+  border-radius: 15px;
+  background: rgba(255,255,255,.045);
+  box-shadow: 0 10px 28px rgba(0,0,0,.16);
+}
+
+.release-cover-wrap,
+.release-cover-img {
+  border-radius: 13px;
+}
+
+.release-play-btn {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  border: 1px solid rgba(255,255,255,.3);
+  box-shadow: 0 8px 20px rgba(0,0,0,.35);
+}
+
+/* Forms and settings */
+.settings-content {
+  padding-bottom: calc(var(--nav-height) + var(--mini-player-height) + 26px);
+}
+
+.settings-card,
+.settings-section {
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.settings-section {
+  padding: 0 15px;
+}
+
+.settings-section h3 {
+  padding: 17px 0 7px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  letter-spacing: .1em;
+}
+
+.setting-item {
+  min-height: 60px;
+  padding: 13px 0;
+  border-bottom-color: var(--line-soft);
+}
+
+.btn-primary,
+.btn-secondary,
+.play-all-btn,
+.download-all-btn {
+  min-height: 44px;
+  border-radius: 12px;
+  transition: transform .18s var(--ease-standard), filter .18s ease, background .18s ease;
+}
+
+.btn-primary,
+.play-all-btn {
+  background: var(--accent-color);
+  color: #0a0b0e;
+}
+
+.btn-primary:active,
+.btn-secondary:active,
+.play-all-btn:active,
+.download-all-btn:active {
+  transform: scale(.96);
+}
+
+.btn-secondary {
+  background: var(--surface-strong);
+  border: 1px solid var(--line-color);
+  color: var(--text-primary);
+}
+
+.form-input,
+.search-input,
+#library-search-input {
+  min-height: 46px;
+  border: 1px solid var(--line-color) !important;
+  border-radius: 13px !important;
+  background: rgba(255,255,255,.055) !important;
+  color: var(--text-primary) !important;
+}
+
+.form-input:focus,
+.search-input:focus,
+#library-search-input:focus {
+  border-color: rgba(255,255,255,.34) !important;
+  background: rgba(255,255,255,.075) !important;
+}
+
+.switch {
+  width: 48px;
+  height: 28px;
+}
+
+.slider {
+  background: rgba(255,255,255,.14);
+}
+
+.color-btn {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+}
+
+/* Navigation and player chrome */
+.bottom-nav {
+  height: var(--nav-height);
+  padding: 5px 8px var(--safe-bottom);
+  background: rgba(12, 14, 18, .88);
+  border-top: 1px solid var(--line-color);
+  box-shadow: 0 -10px 30px rgba(0,0,0,.18);
+}
+
+.nav-btn {
+  height: calc(var(--nav-base-height) - 5px);
+  min-height: 44px;
+  border-radius: 13px;
+  color: var(--text-tertiary);
+}
+
+.nav-btn i {
+  font-size: 19px;
+}
+
+.nav-btn span {
+  font-size: 10px;
+}
+
+.nav-btn.active {
+  color: var(--accent-color);
+  background: rgba(255,255,255,.06);
+}
+
+.mini-player {
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--nav-height) + 4px);
+  height: var(--mini-player-height);
+  border: 1px solid var(--line-color);
+  border-radius: 15px;
+  background: rgba(24, 27, 34, .93);
+  box-shadow: var(--shadow-float);
+}
+
+.mini-controls {
+  gap: 8px;
+}
+
+.mini-cover {
+  width: 44px;
+  height: 44px;
+  border-radius: 9px;
+}
+
+.mini-title {
+  font-size: 13px;
+}
+
+.full-player {
+  padding: calc(var(--safe-top) + 12px) 20px calc(var(--safe-bottom) + 18px);
+  background: #090a0e;
+}
+
+.full-player-bg {
+  opacity: .62;
+  filter: blur(58px) saturate(1.35) brightness(.62);
+}
+
+.full-player-gradient {
+  background: linear-gradient(180deg, rgba(9,10,14,.78) 0%, rgba(9,10,14,.18) 38%, rgba(9,10,14,.44) 68%, rgba(9,10,14,.98) 100%);
+}
+
+.full-cover-container {
+  padding: 14px 0 22px;
+}
+
+.full-cover {
+  width: min(82vw, 360px);
+  max-width: 360px;
+  border-radius: 20px;
+  box-shadow: 0 22px 55px rgba(0,0,0,.5);
+}
+
+.full-info {
+  padding: 0 2px;
+}
+
+.full-title {
+  letter-spacing: -.035em;
+}
+
+.full-controls {
+  margin-bottom: 14px;
+}
+
+/* Overlays: the markup retains inline styles for JS, but appearance is
+   centralized here so action sheets, chooser, toast and auth modal match. */
+.modal-overlay {
+  background: rgba(3,4,6,.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.modal-content,
+#action-sheet-content,
+#playlist-chooser-content {
+  border: 1px solid var(--line-color);
+  background: rgba(20,23,29,.96) !important;
+  box-shadow: var(--shadow-float);
+}
+
+#action-sheet-content,
+#playlist-chooser-content {
+  padding: 18px !important;
+  border-radius: 22px 22px 0 0 !important;
+  padding-bottom: calc(18px + var(--safe-bottom)) !important;
+}
+
+#action-sheet-bg,
+#playlist-chooser-bg {
+  background: rgba(3,4,6,.68) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.as-btn {
+  min-height: 48px;
+  border: 1px solid transparent !important;
+  border-radius: 12px !important;
+  transition: background .18s ease, transform .18s var(--ease-standard);
+}
+
+.as-btn:active {
+  background: rgba(255,255,255,.09) !important;
+  transform: scale(.985);
+}
+
+#as-btn-cancel,
+#playlist-chooser-cancel {
+  min-height: 48px;
+  background: rgba(255,255,255,.08) !important;
+  border: 1px solid var(--line-color) !important;
+}
+
+.global-toast {
+  left: 50%;
+  right: auto;
+  bottom: calc(var(--nav-height) + var(--mini-player-height) + 20px);
+  width: max-content;
+  max-width: calc(100vw - 36px);
+  justify-content: center;
+  min-height: 46px;
+  padding: 10px 15px;
+  border: 1px solid var(--line-color);
+  border-radius: 14px;
+  background: rgba(28,31,38,.94);
+  box-shadow: var(--shadow-float);
+  transform: translateX(-50%);
+}
+
+.global-toast span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.global-toast.hidden {
+  transform: translateX(-50%) translateY(15px);
+}
+
+@media (max-width: 380px) {
+  .vibe-stat-card {
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+  .stat-label {
+    font-size: 9px;
+  }
+  .full-player {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+@media (min-width: 431px) {
+  #app-container,
+  .full-player {
+    max-width: none;
+    margin: 0 auto;
+  }
+
+  .vibe-container {
+    max-width: 920px;
+    margin: 0 auto;
+    padding-top: 92px;
+  }
+
+  .vibe-animation {
+    width: 184px;
+    height: 184px;
+    margin-bottom: 18px;
+  }
+
+  .vibe-title {
+    font-size: clamp(34px, 4vw, 48px);
+  }
+
+  .vibe-mood-chips,
+  .vibe-stats-panel,
+  .vibe-total-stats-row,
+  .vibe-new-releases,
+  .vibe-sync-warning {
+    max-width: 860px;
+  }
+
+  .vibe-mood-chips {
+    justify-content: center;
+  }
+
+  .vibe-stats-panel {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .vibe-total-stats-row {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .bottom-nav {
+    padding-left: max(18px, calc((100vw - 900px) / 2));
+    padding-right: max(18px, calc((100vw - 900px) / 2));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+/* Repair the actual hero node created by app.js. The play control, title and
+   subtitle are children of .vibe-hero (not direct children of .vibe-container). */
+.vibe-hero {
+  min-height: clamp(340px, 52vh, 480px);
+  padding: 26px 18px 20px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-content: center;
+  align-items: center;
+  justify-content: center;
+  column-gap: 8px;
+  row-gap: 0;
+}
+
+.vibe-hero .vibe-animation {
+  width: 38px !important;
+  height: 48px !important;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.vibe-hero .vibe-play-btn {
+  width: 38px !important;
+  height: 44px !important;
+  min-width: 38px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0 !important;
+  background: transparent;
+  color: var(--text-primary);
+  box-shadow: none;
+  font-size: 38px;
+}
+
+.vibe-hero .vibe-title {
+  max-width: 100%;
+  margin: 0;
+  text-align: left;
+  line-height: 1.08;
+}
+
+.vibe-hero .vibe-subtitle {
+  flex: 0 0 auto;
+  width: 100%;
+  margin: 8px 0 0;
+  text-align: center;
+}
+
+.vibe-hero::before {
+  width: min(100vw, 560px);
+  height: min(62vh, 500px);
+  background: radial-gradient(ellipse, rgba(111, 137, 216, .34), rgba(107, 83, 174, .12) 42%, transparent 74%);
+  filter: blur(48px);
+  opacity: .72;
+}
+
+.vibe-ambient-canvas {
+  opacity: 1;
+}
+
+.vibe-mood-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-start !important;
+  align-items: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 18px 16px;
+  gap: 8px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.vibe-mood-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.vibe-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: max-content;
+  min-height: 44px;
+  white-space: nowrap;
+  padding: 0 14px;
+  line-height: 1;
+  border-radius: 999px;
+}
+
+.collection-tag-filters {
+  width: calc(100% + 36px);
+  margin-left: -18px;
+  margin-right: -18px;
+  padding: 8px 18px 12px;
+  overflow: hidden;
+}
+
+.collection-tag-row {
+  width: 100%;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 18px;
+}
+
+.collection-tag-chip {
+  flex: 0 0 auto;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+@media (min-width: 431px) {
+  .vibe-hero {
+    min-height: clamp(420px, 55vh, 540px);
+  }
+
+  .vibe-mood-chips {
+    justify-content: center !important;
+  }
+}
+
+@media (max-height: 700px) {
+  .vibe-hero {
+    min-height: 330px;
+    padding-top: 18px;
+  }
+}
+
+/* Crossfade has its own explicit track: the generic range rule is optimized
+   for playback progress and browser defaults can otherwise hide this rail. */
+.crossfade-slider-input {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 100%;
+  height: 24px !important;
+  margin: 0 !important;
+  padding: 0;
+  background: transparent !important;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+
+.crossfade-slider-input::-webkit-slider-runnable-track {
+  height: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255,255,255,.78), rgba(255,255,255,.24));
+}
+
+.crossfade-slider-input::-moz-range-track {
+  height: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255,255,255,.78), rgba(255,255,255,.24));
+}
+
+.crossfade-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border: 3px solid #111318;
+  border-radius: 50%;
+  background: var(--accent-color);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.55), 0 3px 10px rgba(0,0,0,.35);
+}
+
+.crossfade-slider-input::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 3px solid #111318;
+  border-radius: 50%;
+  background: var(--accent-color);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.55), 0 3px 10px rgba(0,0,0,.35);
+}
+
+/* Keep the WebView viewport fixed while each view owns its vertical scroll.
+   Width-based sizing avoids the extra horizontal pixel some WebViews add for
+   100vw when a scrollbar or system inset is present. */
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+html {
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+}
+
+#app-container {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.view {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: none;
+}
+
+.view,
+.tracks-list,
+.ym-select-menu,
+.releases-carousel,
+.vibe-mood-chips,
+.collection-tag-row,
+#artist-albums-list {
+  scrollbar-width: none;
+}
+
+.view::-webkit-scrollbar,
+.tracks-list::-webkit-scrollbar,
+.ym-select-menu::-webkit-scrollbar,
+.releases-carousel::-webkit-scrollbar,
+.vibe-mood-chips::-webkit-scrollbar,
+.collection-tag-row::-webkit-scrollbar,
+#artist-albums-list::-webkit-scrollbar {
+  display: none;
+}
+
+/* The Wave hero replaces the normal page header, so give it the same top
+   safe-area clearance. Other tab headers already include this inset. */
+#view-vibe .vibe-container {
+  padding-top: calc(var(--safe-top) + 78px);
+}
+
+@media (min-width: 431px) {
+  #view-vibe .vibe-container {
+    padding-top: calc(var(--safe-top) + 92px);
+  }
 }

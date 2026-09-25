@@ -273,18 +273,28 @@ document.getElementById('hub-releases')?.addEventListener('click', () => {
 (() => {
   const order = ['view-vibe', 'view-library', 'view-settings'];
   let startX = 0, startY = 0, startTarget = null;
+  const excludedSwipeRegion = [
+    'button', 'a', 'input', 'textarea', 'select', 'label',
+    '[role="button"]', '[role="dialog"]', '[contenteditable="true"]',
+    '.modal', '.modal-overlay', '.bottom-nav', '.mini-player', '.full-player',
+    '.vibe-mood-chips', '.collection-tag-filters', '.collection-tag-row',
+    '.releases-carousel', '.tracks-list', '.full-lyrics-lines',
+    '[data-horizontal-scroll]', '[data-no-tab-swipe]'
+  ].join(',');
+
   document.addEventListener('touchstart', (event) => {
     const touch = event.changedTouches[0];
     startX = touch.clientX;
     startY = touch.clientY;
-    startTarget = event.target;
+    startTarget = event.target instanceof Element && !event.target.closest(excludedSwipeRegion)
+      ? event.target
+      : null;
   }, { passive: true });
   document.addEventListener('touchend', (event) => {
     const fullPlayer = document.getElementById('full-player');
     if (!startTarget || (fullPlayer && !fullPlayer.classList.contains('translateY-100'))) return;
     const activeView = document.querySelector('.view.active');
     if (!order.includes(activeView?.id) || !activeView.contains(startTarget)) return;
-    if (startTarget.closest('button,a,input,textarea,select,[role="dialog"],.modal,.tracks-list,.releases-carousel,.full-lyrics-lines,.vibe-mood-chips')) return;
     if (document.querySelector('.modal-overlay:not(.hidden), .modal:not(.hidden), [role="dialog"]:not([hidden])')) return;
     const touch = event.changedTouches[0];
     const dx = touch.clientX - startX, dy = touch.clientY - startY;
@@ -296,6 +306,7 @@ document.getElementById('hub-releases')?.addEventListener('click', () => {
     if (button) button.click();
     startTarget = null;
   }, { passive: true });
+  document.addEventListener('touchcancel', () => { startTarget = null; }, { passive: true });
 })();
 
 // --- Auth Logic ---
@@ -609,39 +620,47 @@ const COLLECTION_CATEGORY_LABELS = {
   party: '\u0412\u0435\u0447\u0435\u0440\u0438\u043d\u043a\u0430', focus: '\u0424\u043e\u043a\u0443\u0441', sad: '\u0413\u0440\u0443\u0441\u0442\u044c'
 };
 const COLLECTION_CATEGORY_RULES = {
-  calm: ['calm','chill','ambient','classical','\u043a\u043b\u0430\u0441\u0441\u0438\u043a\u0430','\u0434\u0436\u0430\u0437','jazz','\u0430\u043a\u0443\u0441\u0442','\u0440\u0435\u043b\u0430\u043a\u0441','\u0441\u043f\u043e\u043a\u043e\u0439'],
-  road: ['road','\u0432 \u0434\u043e\u0440\u043e\u0433\u0443','rock','\u0440\u043e\u043a','pop','\u043f\u043e\u043f','indie','\u0438\u043d\u0434\u0438','alternative','\u0430\u043b\u044c\u0442\u0435\u0440'],
-  energy: ['energy','dance','\u0442\u0430\u043d\u0446\u0435\u0432','electronic','\u044d\u043b\u0435\u043a\u0442\u0440\u043e','metal','\u043c\u0435\u0442\u0430\u043b','hardstyle','\u0431\u043e\u0434\u0440','workout'],
-  party: ['party','\u0432\u0435\u0447\u0435\u0440\u0438\u043d','rap','\u0440\u044d\u043f','hip-hop','\u0445\u0438\u043f-\u0445\u043e\u043f','trap','\u0442\u0440\u044d\u043f','rnb','r&b','funk','\u0444\u0430\u043d\u043a'],
-  focus: ['focus','\u0444\u043e\u043a\u0443\u0441','lofi','\u043b\u043e\u0443\u0444\u0430\u0439','instrumental','\u0438\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442','soundtrack','\u0441\u0430\u0443\u043d\u0434\u0442\u0440\u0435\u043a','study'],
-  sad: ['sad','\u0433\u0440\u0443\u0441\u0442','blues','\u0431\u043b\u044e\u0437','emo','\u044d\u043c\u043e','soul','\u0441\u043e\u0443\u043b','melancholy','\u043c\u0435\u043b\u0430\u043d\u0445\u043e\u043b']
+  calm: ['calm','chill','chillout','ambient','classical','neo-classical','new age','lounge','acoustic','relax','sleep','meditation','downtempo','\u043a\u043b\u0430\u0441\u0441\u0438\u043a\u0430','\u0434\u0436\u0430\u0437','jazz','\u0430\u043a\u0443\u0441\u0442','\u0440\u0435\u043b\u0430\u043a\u0441','\u0441\u043f\u043e\u043a\u043e\u0439','\u0442\u0438\u0448\u0438\u043d','\u043c\u044f\u0433\u043a','\u0441\u043e\u043d','\u043c\u0435\u0434\u0438\u0442\u0430\u0446'],
+  road: ['road','driving','travel','car music','rock','pop','indie','alternative','\u0432 \u0434\u043e\u0440\u043e\u0433\u0443','\u043f\u0443\u0442\u0435\u0448\u0435\u0441\u0442\u0432','\u0440\u043e\u043a','\u043f\u043e\u043f','\u0438\u043d\u0434\u0438','\u0430\u043b\u044c\u0442\u0435\u0440','\u0434\u043e\u0440\u043e\u0433'],
+  energy: ['energy','energetic','upbeat','dance','dancing','electronic','edm','house','techno','drum and bass','dnb','metal','punk','hardstyle','workout','running','gym','\u0442\u0430\u043d\u0446\u0435\u0432','\u044d\u043b\u0435\u043a\u0442\u0440\u043e','\u043c\u0435\u0442\u0430\u043b','\u0431\u043e\u0434\u0440','\u044d\u043d\u0435\u0440\u0433','\u0442\u0440\u0435\u043d\u0438\u0440','\u0431\u0435\u0433'],
+  party: ['party','dance party','celebration','celebrate','fun','disco','pop hits','rap','hip-hop','hip hop','trap','rnb','r&b','funk','reggaeton','\u0432\u0435\u0447\u0435\u0440\u0438\u043d','\u043f\u0440\u0430\u0437\u0434\u043d','\u0432\u0435\u0441\u0435\u043b','\u0434\u0438\u0441\u043a\u043e','\u0440\u044d\u043f','\u0445\u0438\u043f-\u0445\u043e\u043f','\u0442\u0440\u044d\u043f','\u0444\u0430\u043d\u043a'],
+  focus: ['focus','concentration','concentrate','study','studying','work','working','productivity','instrumental','instrumentals','lofi','lo-fi','soundtrack','score','minimalism','\u0444\u043e\u043a\u0443\u0441','\u043a\u043e\u043d\u0446\u0435\u043d\u0442\u0440','\u0443\u0447\u0451\u0431','\u0443\u0447\u0435\u0431','\u0440\u0430\u0431\u043e\u0442','\u0438\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442','\u0441\u0430\u0443\u043d\u0434\u0442\u0440\u0435\u043a','\u043a\u0438\u043d\u043e\u043c\u0443\u0437\u044b\u043a'],
+  sad: ['sad','sadness','melancholy','melancholic','heartbreak','breakup','lonely','loss','blues','emo','soul','slow','\u0433\u0440\u0443\u0441\u0442','\u043f\u0435\u0447\u0430\u043b','\u043c\u0435\u043b\u0430\u043d\u0445\u043e\u043b','\u0442\u043e\u0441\u043a','\u043e\u0434\u0438\u043d\u043e\u0447','\u0431\u043b\u044e\u0437','\u044d\u043c\u043e','\u0441\u043e\u0443\u043b']
 };
 
 function getCollectionLabels(entry) {
   const track = entry?.track || entry || {};
-  const album = track.albums?.[0] || entry?.albums?.[0] || {};
   const labels = (value) => (Array.isArray(value) ? value : (value ? [value] : []))
-    .map(item => typeof item === 'string' ? item : item?.name || item?.title || item?.value)
+    .flatMap(item => {
+      if (typeof item === 'string') return [item];
+      if (item && typeof item === 'object') return [item.name, item.title, item.value].filter(Boolean);
+      return [];
+    })
     .filter(Boolean).map(String);
+  const albums = [...(Array.isArray(track.albums) ? track.albums : []),
+    ...(Array.isArray(entry?.albums) ? entry.albums : [])];
   const moodRaw = [
     ...labels(track.moods), ...labels(track.moodTags), ...labels(track.mood),
-    ...labels(album.moods), ...labels(album.moodTags)
+    ...albums.flatMap(album => [...labels(album?.moods), ...labels(album?.moodTags), ...labels(album?.mood)])
   ];
   const genreRaw = [
     ...labels(track.genres), ...labels(track.genre),
-    ...labels(album.genres), ...labels(album.genre)
+    ...albums.flatMap(album => [...labels(album?.genres), ...labels(album?.genre)])
   ];
   const matchCategories = (values) => {
-    const haystack = values.join(' ').toLowerCase();
+    const haystack = values.join(' ').toLocaleLowerCase().replace(/ё/g, 'е').replace(/[_-]+/g, ' ');
     return COLLECTION_CATEGORY_ORDER.filter(category =>
-      category !== 'all' && COLLECTION_CATEGORY_RULES[category].some(term => haystack.includes(term))
+      category !== 'all' && COLLECTION_CATEGORY_RULES[category].some(term =>
+        haystack.includes(term.toLocaleLowerCase().replace(/ё/g, 'е').replace(/[_-]+/g, ' '))
+      )
     );
   };
-  let categories = matchCategories(moodRaw);
-  if (!categories.length) {
-    categories = matchCategories(genreRaw);
-  }
-  return { type: moodRaw.length && categories.length ? 'mood' : 'genre', labels: categories.length ? categories : ['all'] };
+  const moodCategories = matchCategories(moodRaw);
+  const genreCategories = matchCategories(genreRaw);
+  const categories = COLLECTION_CATEGORY_ORDER.filter(category =>
+    moodCategories.includes(category) || genreCategories.includes(category)
+  );
+  return { type: moodCategories.length ? 'mood' : 'genre', labels: categories.length ? categories : ['all'] };
 }
 
 function renderCollectionTags() {
@@ -655,14 +674,21 @@ function renderCollectionTags() {
     list.parentNode.insertBefore(bar, list);
   }
   const available = new Set(['all']);
-  state.tracks.forEach(track => getCollectionLabels(track).labels.forEach(label => available.add(label)));
+  const categoryCounts = Object.fromEntries(COLLECTION_CATEGORY_ORDER.map(category => [category, 0]));
+  state.tracks.forEach(track => {
+    getCollectionLabels(track).labels.forEach(label => {
+      available.add(label);
+      if (label !== 'all') categoryCounts[label]++;
+    });
+  });
   if (state.collectionTagFilter && !available.has(state.collectionTagFilter)) state.collectionTagFilter = null;
   bar.hidden = false;
   bar.innerHTML = '<div class="collection-tag-row">' + COLLECTION_CATEGORY_ORDER
     .filter(category => available.has(category))
     .map(category => '<button type="button" class="collection-tag-chip ' +
       ((state.collectionTagFilter === category || (!state.collectionTagFilter && category === 'all')) ? 'active' : '') +
-      '" data-tag="' + category + '">' + COLLECTION_CATEGORY_LABELS[category] + '</button>')
+      '" data-tag="' + category + '">' + COLLECTION_CATEGORY_LABELS[category] +
+      (category === 'all' ? ` (${state.tracks.length})` : ` (${categoryCounts[category]})`) + '</button>')
     .join('') + '</div>';
   bar.querySelectorAll('.collection-tag-chip').forEach(button => {
     button.addEventListener('click', () => {
@@ -2251,6 +2277,19 @@ function handlePlayToggle(e) {
 dom.miniBtnPlay.addEventListener('click', handlePlayToggle);
 dom.fullBtnPlay.addEventListener('click', handlePlayToggle);
 dom.vibePlayBtn.addEventListener('click', startVibe);
+const vibeTitleAction = document.querySelector('.vibe-title');
+if (vibeTitleAction) {
+  vibeTitleAction.setAttribute('role', 'button');
+  vibeTitleAction.setAttribute('tabindex', '0');
+  vibeTitleAction.setAttribute('aria-label', 'Запустить Мою Волну');
+  vibeTitleAction.addEventListener('click', () => dom.vibePlayBtn.click());
+  vibeTitleAction.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      dom.vibePlayBtn.click();
+    }
+  });
+}
 
 if (dom.miniBtnNext) dom.miniBtnNext.addEventListener('click', (e) => { e.stopPropagation(); playNext(); });
 
@@ -4711,8 +4750,8 @@ function getAppVersionInfo() {
   // in AndroidManifest.xml. They previously read 4 / '1.0.3', which made a
   // failed bridge lookup silently claim an ancient version and could hide or
   // fake an update.
-  let versionCode = 48;
-  let versionName = '1.1.31';
+  let versionCode = 51;
+  let versionName = '1.1.34';
   if (window.AndroidBridge) {
     if (typeof window.AndroidBridge.getVersionCode === 'function') {
       try {
@@ -5056,8 +5095,10 @@ let vibeAuraCtx = null;
 let vibeAuraWidth = 0;
 let vibeAuraHeight = 0;
 let vibeAuraAnimFrame = null;
-let vibeAuraCoverImage = null;
 let vibeAuraCoverUrl = '';
+let vibeAuraPaletteRequest = 0;
+let auraCurrentColors = [];
+let auraTargetColors = [];
 const vibeAuraReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
 
 function initVibeAmbientAura() {
@@ -5087,30 +5128,68 @@ function initVibeAmbientAura() {
 }
 
 function updateVibeAmbientAura(coverUrl) {
-  const ambientWrap = document.getElementById('vibe-ambient-wrap');
-  if (!ambientWrap) return;
   if (!coverUrl || coverUrl === PLACEHOLDER_COVER) {
-    ambientWrap.style.removeProperty('--vibe-cover-image');
-    ambientWrap.classList.remove('has-cover');
-    vibeAuraCoverImage = null;
     vibeAuraCoverUrl = '';
+    auraTargetColors = [];
+    auraCurrentColors = [];
     return;
   }
   let cover = String(coverUrl);
   if (cover.includes('%%')) cover = cover.replace('%%', '400x400');
   if (!cover.startsWith('http')) cover = `https://${cover}`;
-  ambientWrap.style.setProperty('--vibe-cover-image', `url("${cover}")`);
-  ambientWrap.classList.add('has-cover');
-  if (cover !== vibeAuraCoverUrl) {
-    vibeAuraCoverUrl = cover;
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.onload = () => {
-      vibeAuraCoverImage = image;
+  if (cover === vibeAuraCoverUrl) return;
+
+  vibeAuraCoverUrl = cover;
+  const requestId = ++vibeAuraPaletteRequest;
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.onload = () => {
+    if (requestId !== vibeAuraPaletteRequest || cover !== vibeAuraCoverUrl) return;
+    const sampleCanvas = document.createElement('canvas');
+    sampleCanvas.width = 24;
+    sampleCanvas.height = 24;
+    const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+    if (!sampleCtx) return;
+    try {
+      sampleCtx.drawImage(image, 0, 0, sampleCanvas.width, sampleCanvas.height);
+      const pixels = sampleCtx.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data;
+      const candidates = [];
+      for (let i = 0; i < pixels.length; i += 4) {
+        const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2], alpha = pixels[i + 3] / 255;
+        if (alpha < 0.65) continue;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const saturation = max ? (max - min) / max : 0;
+        const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        if (luminance < 18) continue;
+        candidates.push({
+          r, g, b,
+          score: saturation * 1.5 + Math.min(luminance / 255, 1) * 0.25
+        });
+      }
+      candidates.sort((a, b) => b.score - a.score);
+      const selected = [];
+      for (const color of candidates) {
+        if (selected.every((chosen) => {
+          const distance = Math.hypot(color.r - chosen.r, color.g - chosen.g, color.b - chosen.b);
+          return distance > 38;
+        })) {
+          selected.push(color);
+        }
+        if (selected.length === 3) break;
+      }
+      if (!selected.length && candidates.length) selected.push(candidates[0]);
+      auraTargetColors = selected.slice(0, 3).map(({ r, g, b }) => ({ r, g, b }));
       startAuraLoop();
-    };
-    image.src = cover;
-  }
+    } catch (error) {
+      // A cross-origin image without CORS headers cannot be sampled safely.
+      // Keep the aura empty instead of drawing the cover or inventing colors.
+      if (requestId === vibeAuraPaletteRequest) auraTargetColors = [];
+    }
+  };
+  image.onerror = () => {
+    if (requestId === vibeAuraPaletteRequest) auraTargetColors = [];
+  };
+  image.src = cover;
 }
 
 function getAudioSpectrumData() {
@@ -5193,36 +5272,24 @@ function renderAuraFrame() {
     { dx: 0.32, dy: 0.04, sx: 0.86, sy: 0.76, opacity: 0.21, phase: 4.0 }
   ];
 
-  // Move blurred copies of the current cover itself. This keeps the aura's
-  // palette tied to the track artwork instead of introducing fixed colors.
-  if (vibeAuraCoverImage?.complete && vibeAuraCoverImage.naturalWidth) {
-    const image = vibeAuraCoverImage;
-    const imageScale = Math.max(vibeAuraWidth * 0.72 / image.naturalWidth, vibeAuraHeight * 0.52 / image.naturalHeight) * 1.25;
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-    ctx.filter = 'blur(34px) saturate(1.8) brightness(1.08)';
-    [
-      { alpha: 0.58, x: 0.5, y: 0.43, scale: 1.02, phase: 0 },
-      { alpha: 0.4, x: 0.32, y: 0.49, scale: 1.12, phase: 2.1 },
-      { alpha: 0.4, x: 0.68, y: 0.39, scale: 1.08, phase: 4.0 }
-    ].forEach((layer) => {
-      const driftX = Math.sin(phase + layer.phase) * vibeAuraWidth * (0.08 + audio.mids * 0.08);
-      const driftY = Math.cos(phase * 0.78 + layer.phase) * vibeAuraHeight * (0.06 + audio.highs * 0.06);
-      const scale = imageScale * layer.scale * (1 + audio.level * 0.08);
-      ctx.globalAlpha = layer.alpha * (0.82 + audio.level * 0.45);
-      ctx.save();
-      ctx.translate(vibeAuraWidth * layer.x + driftX, vibeAuraHeight * layer.y + driftY);
-      ctx.rotate(Math.sin(phase * 0.7 + layer.phase) * 0.12);
-      ctx.drawImage(image, -image.naturalWidth * scale * 0.5, -image.naturalHeight * scale * 0.5,
-        image.naturalWidth * scale, image.naturalHeight * scale);
-      ctx.restore();
-    });
-    ctx.restore();
-    ctx.filter = 'none';
+  // Always keep a restrained ambient motion even when cover art is unavailable,
+  // opaque to canvas sampling, or reduced-motion is enabled. Use sampled art
+  // colors whenever available; otherwise fall back to a calm blue-violet glow.
+  const auraColors = auraTargetColors.length
+    ? auraTargetColors
+    : [{ r: 112, g: 130, b: 190 }];
+  if (auraCurrentColors.length !== auraColors.length) {
+    auraCurrentColors = auraColors.map((color) => ({ ...color }));
+  } else if (!vibeAuraReducedMotion) {
+    auraCurrentColors = auraCurrentColors.map((color, index) => ({
+      r: color.r + (auraColors[index].r - color.r) * 0.055,
+      g: color.g + (auraColors[index].g - color.g) * 0.055,
+      b: color.b + (auraColors[index].b - color.b) * 0.055
+    }));
   }
 
   ctx.globalCompositeOperation = 'screen';
-  pools.forEach((pool) => {
+  pools.forEach((pool, index) => {
     const x = cx + pool.dx * vibeAuraWidth * 0.38 + Math.sin(phase + pool.phase + audio.mids * 2) * vibeAuraWidth * (0.04 + audio.mids * 0.06);
     const y = cy + pool.dy * vibeAuraHeight + Math.cos(phase * 0.8 + pool.phase + audio.highs) * vibeAuraHeight * (0.035 + audio.highs * 0.04);
     ctx.save();
@@ -5230,8 +5297,8 @@ function renderAuraFrame() {
     ctx.rotate(Math.sin(phase + pool.phase) * 0.2);
     ctx.scale(pool.sx, pool.sy);
     const gradient = ctx.createRadialGradient(0, 0, radius * 0.025, 0, 0, radius);
-    // Neutral canvas pulses let the blurred cover layer supply the actual hue.
-    const rgb = '255,255,255';
+    const color = auraCurrentColors[index % auraCurrentColors.length];
+    const rgb = `${Math.round(color.r)},${Math.round(color.g)},${Math.round(color.b)}`;
     const reactiveOpacity = pool.opacity * (0.72 + audio.level * 0.9);
     gradient.addColorStop(0, 'rgba(' + rgb + ',' + reactiveOpacity + ')');
     gradient.addColorStop(0.22, 'rgba(' + rgb + ',' + (reactiveOpacity * 0.72) + ')');
