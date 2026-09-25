@@ -1006,10 +1006,15 @@ input[type=range]::-webkit-slider-thumb {
   filter: blur(48px) saturate(1.65) brightness(.84);
   transform: scale(1.22);
   transition: opacity .8s ease, filter .8s ease;
+  animation: vibeCoverDrift 30s ease-in-out infinite alternate;
   mix-blend-mode: screen;
 }
 .vibe-ambient-wrap.has-cover::before {
-  opacity: .92;
+  opacity: .78;
+}
+@keyframes vibeCoverDrift {
+  from { transform: scale(1.22) translate(-1.5%, -1%); }
+  to { transform: scale(1.32) translate(1.5%, 1%); }
 }
 
 .vibe-ambient-canvas {
@@ -1022,8 +1027,11 @@ input[type=range]::-webkit-slider-thumb {
   z-index: 1;
   transform: translateZ(0);
   pointer-events: none;
-  opacity: .32;
+  opacity: .48;
   mix-blend-mode: screen;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vibe-ambient-wrap::before { animation: none; }
 }
 
 .vibe-container {

@@ -4704,8 +4704,8 @@ function getAppVersionInfo() {
   // in AndroidManifest.xml. They previously read 4 / '1.0.3', which made a
   // failed bridge lookup silently claim an ancient version and could hide or
   // fake an update.
-  let versionCode = 23;
-  let versionName = '1.1.6';
+  let versionCode = 44;
+  let versionName = '1.1.27';
   if (window.AndroidBridge) {
     if (typeof window.AndroidBridge.getVersionCode === 'function') {
       try {
@@ -5049,6 +5049,7 @@ let vibeAuraCtx = null;
 let vibeAuraWidth = 0;
 let vibeAuraHeight = 0;
 let vibeAuraAnimFrame = null;
+const vibeAuraReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
 
 function initVibeAmbientAura() {
   vibeAuraCanvas = document.getElementById('vibe-ambient-canvas');
@@ -5149,10 +5150,12 @@ function renderAuraFrame() {
   // Soft, flowing color haze; unlike the old visualizer this draws no hard rings or ribbons.
   vibeAuraAnimFrame = 0;
   if (!vibeAuraCtx || !auraViewIsActive()) return;
-  vibeAuraAnimFrame = requestAnimationFrame(renderAuraFrame);
+  if (!vibeAuraReducedMotion) vibeAuraAnimFrame = requestAnimationFrame(renderAuraFrame);
 
   const now = Date.now();
-  const audio = getAudioSpectrumData();
+  const audio = vibeAuraReducedMotion
+    ? { bass: 0, mids: 0, highs: 0, pulse: 1, level: 0 }
+    : getAudioSpectrumData();
   const ctx = vibeAuraCtx;
   ctx.clearRect(0, 0, vibeAuraWidth, vibeAuraHeight);
   const hero = document.querySelector('.vibe-hero');
@@ -5161,11 +5164,11 @@ function renderAuraFrame() {
   const cx = vibeAuraWidth * 0.5;
   const cy = heroRect ? heroRect.top - canvasRect.top + heroRect.height * 0.57 : vibeAuraHeight * 0.42;
   const radius = Math.min(vibeAuraWidth * 0.72, vibeAuraHeight * 0.68) * audio.pulse;
-  const phase = now * 0.00012;
+  const phase = vibeAuraReducedMotion ? 0 : now * 0.00012;
   const pools = [
-    { dx: 0, dy: 0, sx: 1.08, sy: 0.82, opacity: 0.22, phase: 0 },
-    { dx: -0.32, dy: -0.06, sx: 0.8, sy: 1.0, opacity: 0.15, phase: 2.1 },
-    { dx: 0.32, dy: 0.04, sx: 0.86, sy: 0.76, opacity: 0.15, phase: 4.0 }
+    { dx: 0, dy: 0, sx: 1.08, sy: 0.82, opacity: 0.3, phase: 0 },
+    { dx: -0.32, dy: -0.06, sx: 0.8, sy: 1.0, opacity: 0.21, phase: 2.1 },
+    { dx: 0.32, dy: 0.04, sx: 0.86, sy: 0.76, opacity: 0.21, phase: 4.0 }
   ];
 
   ctx.globalCompositeOperation = 'screen';
@@ -5179,7 +5182,7 @@ function renderAuraFrame() {
     const gradient = ctx.createRadialGradient(0, 0, radius * 0.025, 0, 0, radius);
     // Neutral canvas pulses let the blurred cover layer supply the actual hue.
     const rgb = '255,255,255';
-    const reactiveOpacity = pool.opacity * (0.78 + audio.level * 0.55);
+    const reactiveOpacity = pool.opacity * (0.72 + audio.level * 0.9);
     gradient.addColorStop(0, 'rgba(' + rgb + ',' + reactiveOpacity + ')');
     gradient.addColorStop(0.22, 'rgba(' + rgb + ',' + (reactiveOpacity * 0.72) + ')');
     gradient.addColorStop(0.5, 'rgba(' + rgb + ',' + (reactiveOpacity * 0.28) + ')');
