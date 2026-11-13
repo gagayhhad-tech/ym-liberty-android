@@ -20,9 +20,6 @@
 .end method
 
 # virtual methods
-# JS returns "true" when it consumed the back gesture (closed a modal, the full
-# player, or navigated a view back). Anything else falls through to the default
-# Activity behaviour.
 .method public onReceiveValue(Ljava/lang/Object;)V
     .registers 4
 
@@ -54,7 +51,9 @@
 
     if-eqz v0, :cond_exit
 
-    invoke-virtual {v0}, Landroid/app/Activity;->finish()V
+    const/4 v1, 0x1
+
+    invoke-virtual {v0, v1}, Landroid/app/Activity;->moveTaskToBack(Z)Z
     :try_end_0
     .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
 

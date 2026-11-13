@@ -817,3 +817,266 @@
 
     return v0
 .end method
+
+.method public getNavBarInset()I
+    .registers 7
+    .annotation runtime Landroid/webkit/JavascriptInterface;
+    .end annotation
+
+    :try_start_nav_inset
+    iget-object v0, p0, Lcom/ymliberty/app/AndroidBridge;->mContext:Landroid/content/Context;
+
+    instance-of v1, v0, Landroid/app/Activity;
+
+    if-eqz v1, :cond_nav_inset_zero
+
+    check-cast v0, Landroid/app/Activity;
+
+    invoke-virtual {v0}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
+
+    move-result-object v1
+
+    if-eqz v1, :cond_nav_inset_zero
+
+    invoke-virtual {v1}, Landroid/view/Window;->getDecorView()Landroid/view/View;
+
+    move-result-object v1
+
+    if-eqz v1, :cond_nav_inset_zero
+
+    invoke-virtual {v1}, Landroid/view/View;->getRootWindowInsets()Landroid/view/WindowInsets;
+
+    move-result-object v2
+
+    if-eqz v2, :cond_nav_inset_zero
+
+    sget v3, Landroid/os/Build$VERSION;->SDK_INT:I
+
+    const/16 v4, 0x1e
+
+    if-lt v3, v4, :cond_nav_inset_legacy
+
+    invoke-static {}, Landroid/view/WindowInsets$Type;->navigationBars()I
+
+    move-result v3
+
+    invoke-virtual {v2, v3}, Landroid/view/WindowInsets;->getInsets(I)Landroid/graphics/Insets;
+
+    move-result-object v2
+
+    if-eqz v2, :cond_nav_inset_zero
+
+    iget v2, v2, Landroid/graphics/Insets;->bottom:I
+
+    goto :cond_nav_inset_measure
+
+    :cond_nav_inset_legacy
+    invoke-virtual {v2}, Landroid/view/WindowInsets;->getStableInsetBottom()I
+
+    move-result v2
+
+    :cond_nav_inset_measure
+    const v3, 0x1020002
+
+    invoke-virtual {v0, v3}, Landroid/app/Activity;->findViewById(I)Landroid/view/View;
+
+    move-result-object v3
+
+    if-eqz v3, :cond_nav_inset_scale
+
+    const/4 v4, 0x2
+
+    new-array v4, v4, [I
+
+    invoke-virtual {v3, v4}, Landroid/view/View;->getLocationInWindow([I)V
+
+    const/4 v5, 0x1
+
+    aget v5, v4, v5
+
+    invoke-virtual {v3}, Landroid/view/View;->getHeight()I
+
+    move-result v4
+
+    add-int/2addr v5, v4
+
+    invoke-virtual {v1}, Landroid/view/View;->getHeight()I
+
+    move-result v4
+
+    sub-int/2addr v4, v2
+
+    sub-int v2, v5, v4
+
+    if-gez v2, :cond_nav_inset_scale
+
+    const/4 v2, 0x0
+
+    :cond_nav_inset_scale
+    invoke-virtual {v0}, Landroid/app/Activity;->getResources()Landroid/content/res/Resources;
+
+    move-result-object v3
+
+    invoke-virtual {v3}, Landroid/content/res/Resources;->getDisplayMetrics()Landroid/util/DisplayMetrics;
+
+    move-result-object v3
+
+    iget v3, v3, Landroid/util/DisplayMetrics;->density:F
+
+    int-to-float v2, v2
+
+    div-float/2addr v2, v3
+
+    invoke-static {v2}, Ljava/lang/Math;->round(F)I
+
+    move-result v2
+
+    return v2
+    :try_end_nav_inset
+    .catch Ljava/lang/Throwable; {:try_start_nav_inset .. :try_end_nav_inset} :catch_nav_inset
+
+    :catch_nav_inset
+    :cond_nav_inset_zero
+    const/4 v0, 0x0
+
+    return v0
+.end method
+
+.method public getStatusBarInset()I
+    .registers 7
+    .annotation runtime Landroid/webkit/JavascriptInterface;
+    .end annotation
+
+    :try_start_status_inset
+    iget-object v0, p0, Lcom/ymliberty/app/AndroidBridge;->mContext:Landroid/content/Context;
+
+    instance-of v1, v0, Landroid/app/Activity;
+
+    if-eqz v1, :cond_status_inset_zero
+
+    check-cast v0, Landroid/app/Activity;
+
+    invoke-virtual {v0}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
+
+    move-result-object v1
+
+    if-eqz v1, :cond_status_inset_zero
+
+    invoke-virtual {v1}, Landroid/view/Window;->getDecorView()Landroid/view/View;
+
+    move-result-object v1
+
+    if-eqz v1, :cond_status_inset_zero
+
+    invoke-virtual {v1}, Landroid/view/View;->getRootWindowInsets()Landroid/view/WindowInsets;
+
+    move-result-object v2
+
+    if-eqz v2, :cond_status_inset_zero
+
+    sget v3, Landroid/os/Build$VERSION;->SDK_INT:I
+
+    const/16 v4, 0x1e
+
+    if-lt v3, v4, :cond_status_inset_legacy
+
+    invoke-static {}, Landroid/view/WindowInsets$Type;->statusBars()I
+
+    move-result v3
+
+    invoke-virtual {v2, v3}, Landroid/view/WindowInsets;->getInsets(I)Landroid/graphics/Insets;
+
+    move-result-object v2
+
+    if-eqz v2, :cond_status_inset_zero
+
+    iget v2, v2, Landroid/graphics/Insets;->top:I
+
+    goto :cond_status_inset_measure
+
+    :cond_status_inset_legacy
+    invoke-virtual {v2}, Landroid/view/WindowInsets;->getStableInsetTop()I
+
+    move-result v2
+
+    :cond_status_inset_measure
+    const v3, 0x1020002
+
+    invoke-virtual {v0, v3}, Landroid/app/Activity;->findViewById(I)Landroid/view/View;
+
+    move-result-object v3
+
+    if-eqz v3, :cond_status_inset_scale
+
+    const/4 v4, 0x2
+
+    new-array v4, v4, [I
+
+    invoke-virtual {v3, v4}, Landroid/view/View;->getLocationInWindow([I)V
+
+    const/4 v5, 0x1
+
+    aget v5, v4, v5
+
+    sub-int/2addr v2, v5
+
+    if-gez v2, :cond_status_inset_scale
+
+    const/4 v2, 0x0
+
+    :cond_status_inset_scale
+    invoke-virtual {v0}, Landroid/app/Activity;->getResources()Landroid/content/res/Resources;
+
+    move-result-object v3
+
+    invoke-virtual {v3}, Landroid/content/res/Resources;->getDisplayMetrics()Landroid/util/DisplayMetrics;
+
+    move-result-object v3
+
+    iget v3, v3, Landroid/util/DisplayMetrics;->density:F
+
+    int-to-float v2, v2
+
+    div-float/2addr v2, v3
+
+    invoke-static {v2}, Ljava/lang/Math;->round(F)I
+
+    move-result v2
+
+    return v2
+    :try_end_status_inset
+    .catch Ljava/lang/Throwable; {:try_start_status_inset .. :try_end_status_inset} :catch_status_inset
+
+    :catch_status_inset
+    :cond_status_inset_zero
+    const/4 v0, 0x0
+
+    return v0
+.end method
+
+.method public setSystemNavHidden(Z)V
+    .registers 5
+    .annotation runtime Landroid/webkit/JavascriptInterface;
+    .end annotation
+
+    :try_start_nav_hide
+    iget-object v0, p0, Lcom/ymliberty/app/AndroidBridge;->mContext:Landroid/content/Context;
+
+    instance-of v1, v0, Landroid/app/Activity;
+
+    if-eqz v1, :cond_nav_hide_exit
+
+    check-cast v0, Landroid/app/Activity;
+
+    new-instance v1, Lcom/ymliberty/app/SystemNavRunnable;
+
+    invoke-direct {v1, v0, p1}, Lcom/ymliberty/app/SystemNavRunnable;-><init>(Landroid/app/Activity;Z)V
+
+    invoke-virtual {v0, v1}, Landroid/app/Activity;->runOnUiThread(Ljava/lang/Runnable;)V
+    :try_end_nav_hide
+    .catch Ljava/lang/Throwable; {:try_start_nav_hide .. :try_end_nav_hide} :catch_nav_hide
+
+    :catch_nav_hide
+    :cond_nav_hide_exit
+    return-void
+.end method

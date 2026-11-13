@@ -92,7 +92,9 @@
     return-void
 
     :cond_fallback
-    invoke-super {p0}, Landroid/app/Activity;->onBackPressed()V
+    const/4 v0, 0x1
+
+    invoke-virtual {p0, v0}, Landroid/app/Activity;->moveTaskToBack(Z)Z
 
     return-void
 .end method
@@ -110,7 +112,7 @@
 
     :cond_go
     :try_start_0
-    const-string v1, "typeof window.handleAndroidBack === \'function\' ? (window.handleAndroidBack() ? \'true\' : \'false\') : \'handled\'"
+    const-string v1, "typeof window.handleAndroidBack === \'function\' ? !!window.handleAndroidBack() : false"
 
     new-instance v2, Lcom/ymliberty/app/AndroidBackCallback;
 

@@ -1469,7 +1469,14 @@ window.handleAndroidBack = function() {
       return true;
     }
 
-    // 5. On the main tab: let the system handle it (minimise the app).
+    if (activeView && activeView.id !== 'view-vibe') {
+      const vibeBtn = document.querySelector('.nav-btn[data-target="view-vibe"]');
+      if (vibeBtn) {
+        vibeBtn.click();
+        return true;
+      }
+    }
+
     return false;
   } catch (e) {
     console.warn('handleAndroidBack error:', e);
@@ -2994,6 +3001,60 @@ dom.toggleDynamicBg.addEventListener('change', () => {
   syncDynamicBackground();
 });
 
+const HIDE_SYSTEM_NAV_KEY = 'ym_hide_system_nav';
+const hasNavBridge = !!(window.AndroidBridge && typeof window.AndroidBridge.getNavBarInset === 'function');
+
+function isSystemNavHidden() {
+  try { return localStorage.getItem(HIDE_SYSTEM_NAV_KEY) === '1'; } catch (e) { return false; }
+}
+
+function applySystemNavInset() {
+  let inset = 0;
+  if (hasNavBridge && !isSystemNavHidden()) {
+    try { inset = Math.max(0, Number(window.AndroidBridge.getNavBarInset()) || 0); } catch (e) {}
+  }
+  document.documentElement.style.setProperty('--android-nav-inset', inset + 'px');
+  applyStatusBarInset();
+}
+
+function applyStatusBarInset() {
+  if (!window.AndroidBridge || typeof window.AndroidBridge.getStatusBarInset !== 'function') return;
+  let inset = 0;
+  try { inset = Math.max(0, Number(window.AndroidBridge.getStatusBarInset()) || 0); } catch (e) {}
+  document.documentElement.style.setProperty('--android-status-inset', inset + 'px');
+}
+applyStatusBarInset();
+window.addEventListener('resize', applyStatusBarInset);
+setTimeout(applyStatusBarInset, 300);
+
+function applySystemNavMode() {
+  if (hasNavBridge && typeof window.AndroidBridge.setSystemNavHidden === 'function') {
+    try { window.AndroidBridge.setSystemNavHidden(isSystemNavHidden()); } catch (e) {}
+  }
+  applySystemNavInset();
+  setTimeout(applySystemNavInset, 300);
+  setTimeout(applySystemNavInset, 1200);
+}
+
+(function initSystemNav() {
+  if (!hasNavBridge) return;
+  const row = document.getElementById('setting-hide-system-nav');
+  const toggle = document.getElementById('toggle-hide-system-nav');
+  if (row) row.classList.remove('hidden');
+  if (toggle) {
+    toggle.checked = isSystemNavHidden();
+    toggle.addEventListener('change', () => {
+      try { localStorage.setItem(HIDE_SYSTEM_NAV_KEY, toggle.checked ? '1' : '0'); } catch (e) {}
+      applySystemNavMode();
+    });
+  }
+  applySystemNavMode();
+  window.addEventListener('resize', applySystemNavInset);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) applySystemNavMode();
+  });
+})();
+
 // Color Picker Logic
 const ACCENT_COLOR_KEY = 'ym_accent_color';
 function applyAccentColor(color) {
@@ -3897,6 +3958,11 @@ let syncRetries = 0;
 // Set when the account-side stats sync is known to be failing, so the UI can
 // stop pretending the counters are safe in the cloud.
 let statsSyncFailed = false;
+let serverStatsOk = null;
+let accountStatsOk = null;
+let lastAccountStatsWrite = 0;
+let syncPlaylistTitle = null;
+const ACCOUNT_STATS_WRITE_INTERVAL = 60000;
 let lastAudioSampleTime = null;
 let lastAudioCurrentTrackId = null;
 
@@ -4113,28 +4179,80 @@ async function syncStatsFromServer() {
       return;
     }
 
-    const local = getWaveStats();
-    const today = new Date().toISOString().slice(0, 10);
-
-    local.totalTracks = Math.max(local.totalTracks || 0, remote.totalTracks || 0);
-    local.totalSeconds = Math.max(local.totalSeconds || 0, remote.totalSeconds || 0);
-    if (remote.date === today) {
-      local.todayTracks = Math.max(local.todayTracks || 0, remote.todayTracks || 0);
-      local.todaySeconds = Math.max(local.todaySeconds || 0, remote.todaySeconds || 0);
-    }
-    saveWaveStats(local);
-    updateWaveStatsDisplay();
+    mergeRemoteStats(remote);
 
     // The local copy may have been ahead (e.g. listening happened offline), so
     // write the merged result back rather than only pulling.
     await pushStatsToServer(uid);
-
-    if (statsSyncFailed) ylog('SYNC', 'server stats sync recovered');
-    statsSyncFailed = false;
   } catch (e) {
     ylogError('SYNC', 'read stats from server failed: ' + (e && e.message ? e.message : e));
-    statsSyncFailed = true;
+    serverStatsOk = false;
+    refreshStatsSyncFlag();
   }
+}
+
+function mergeRemoteStats(remote) {
+  if (!remote) return;
+  const local = getWaveStats();
+  const today = new Date().toISOString().slice(0, 10);
+  local.totalTracks = Math.max(local.totalTracks || 0, remote.totalTracks || 0);
+  local.totalSeconds = Math.max(local.totalSeconds || 0, remote.totalSeconds || 0);
+  if (remote.date === today) {
+    local.todayTracks = Math.max(local.todayTracks || 0, remote.todayTracks || 0);
+    local.todaySeconds = Math.max(local.todaySeconds || 0, remote.todaySeconds || 0);
+  }
+  saveWaveStats(local);
+  updateWaveStatsDisplay();
+}
+
+function refreshStatsSyncFlag() {
+  const failed = serverStatsOk === false && accountStatsOk !== true;
+  if (statsSyncFailed && !failed) ylog('SYNC', 'stats sync recovered (server=' + serverStatsOk + ', account=' + accountStatsOk + ')');
+  statsSyncFailed = failed;
+  updateWaveStatsDisplay();
+}
+
+function encodeAccountStatsTitle(stats) {
+  return STATS_PLAYLIST_PREFIX + 'wave-history|' + [
+    Math.floor(stats.totalTracks || 0),
+    Math.floor(stats.totalSeconds || 0),
+    stats.date || new Date().toISOString().slice(0, 10),
+    Math.floor(stats.todayTracks || 0),
+    Math.floor(stats.todaySeconds || 0)
+  ].join(':');
+}
+
+function parseAccountStatsTitle(title) {
+  const m = /\|(\d+):(\d+):(\d{4}-\d{2}-\d{2}):(\d+):(\d+)$/.exec(title || '');
+  if (!m) return null;
+  return {
+    totalTracks: +m[1], totalSeconds: +m[2], date: m[3],
+    todayTracks: +m[4], todaySeconds: +m[5]
+  };
+}
+
+async function pushStatsToAccount(force = false) {
+  if (!state.token || !syncPlaylistKind || !YandexClient.renamePlaylist) return false;
+  const now = Date.now();
+  if (!force && now - lastAccountStatsWrite < ACCOUNT_STATS_WRITE_INTERVAL) return accountStatsOk === true;
+  const title = encodeAccountStatsTitle(getWaveStats());
+  if (title === syncPlaylistTitle) {
+    accountStatsOk = true;
+    refreshStatsSyncFlag();
+    return true;
+  }
+  lastAccountStatsWrite = now;
+  try {
+    const res = await YandexClient.renamePlaylist(syncPlaylistKind, title, state.token);
+    if (!res) throw new Error('empty rename response');
+    syncPlaylistTitle = title;
+    accountStatsOk = true;
+  } catch (e) {
+    ylogError('SYNC', 'write stats to account failed: ' + (e && e.message ? e.message : e));
+    accountStatsOk = false;
+  }
+  refreshStatsSyncFlag();
+  return accountStatsOk;
 }
 
 async function pushStatsToServer(uidHint) {
@@ -4153,20 +4271,18 @@ async function pushStatsToServer(uidHint) {
       todaySeconds: stats.todaySeconds || 0,
       date: stats.date || new Date().toISOString().slice(0, 10)
     });
-    if (statsSyncFailed) ylog('SYNC', 'server stats sync recovered');
-    statsSyncFailed = false;
-    updateWaveStatsDisplay();
+    serverStatsOk = true;
+    refreshStatsSyncFlag();
     return true;
   } catch (e) {
     ylogError('SYNC', 'write stats to server failed: ' + (e && e.message ? e.message : e));
-    statsSyncFailed = true;
-    updateWaveStatsDisplay();
+    serverStatsOk = false;
+    await pushStatsToAccount();
+    refreshStatsSyncFlag();
     return false;
   }
 }
 
-// Resolve (creating it if needed) the hidden account playlist that stores the
-// Wave history. Its title carries no counters — only the marker prefix.
 async function syncWaveHistoryPlaylist() {
   if (!state.token || !YandexClient.getUserPlaylistsRaw) return;
   try {
@@ -4174,6 +4290,14 @@ async function syncWaveHistoryPlaylist() {
     const statPl = (playlists || []).find(p => p.title && p.title.startsWith(STATS_PLAYLIST_PREFIX));
     if (statPl) {
       syncPlaylistKind = statPl.kind;
+      syncPlaylistTitle = statPl.title;
+      const accountCopy = parseAccountStatsTitle(statPl.title);
+      if (accountCopy) {
+        mergeRemoteStats(accountCopy);
+        accountStatsOk = true;
+      }
+      if (serverStatsOk === false) await pushStatsToAccount(true);
+      else refreshStatsSyncFlag();
 
       // Restore previously played Wave tracks so the Wave never repeats after a reinstall
       if (YandexClient.getPlaylist) {
@@ -4201,7 +4325,9 @@ async function syncWaveHistoryPlaylist() {
     const created = await YandexClient.createPrivatePlaylist(STATS_PLAYLIST_PREFIX + 'wave-history', state.token);
     if (created && created.kind) {
       syncPlaylistKind = created.kind;
+      syncPlaylistTitle = STATS_PLAYLIST_PREFIX + 'wave-history';
       ylog('SYNC', 'created wave history playlist kind=' + created.kind);
+      if (serverStatsOk === false) await pushStatsToAccount(true);
     } else {
       ylogError('SYNC', 'could not create wave history playlist');
     }
@@ -4750,8 +4876,8 @@ function getAppVersionInfo() {
   // in AndroidManifest.xml. They previously read 4 / '1.0.3', which made a
   // failed bridge lookup silently claim an ancient version and could hide or
   // fake an update.
-  let versionCode = 51;
-  let versionName = '1.1.34';
+  let versionCode = 55;
+  let versionName = '1.1.34.4';
   if (window.AndroidBridge) {
     if (typeof window.AndroidBridge.getVersionCode === 'function') {
       try {
@@ -5552,15 +5678,29 @@ function initSwipeGestures() {
 
     let vStartX = 0, vStartY = 0, vStartTime = 0;
     let vIsSwiping = false;
+    let vBlocked = false;
+
+    const insideHorizontalScroller = (target) => {
+      for (let el = target instanceof Element ? target : null; el && el !== viewEl; el = el.parentElement) {
+        if (el.matches('input[type="range"], [data-horizontal-scroll], [data-no-tab-swipe]')) return true;
+        if (el.scrollWidth > el.clientWidth + 1) {
+          const ox = getComputedStyle(el).overflowX;
+          if (ox === 'auto' || ox === 'scroll') return true;
+        }
+      }
+      return false;
+    };
 
     viewEl.addEventListener('touchstart', (e) => {
       vStartX = e.touches[0].clientX;
       vStartY = e.touches[0].clientY;
       vStartTime = Date.now();
       vIsSwiping = false;
+      vBlocked = e.touches.length > 1 || insideHorizontalScroller(e.target);
     }, { passive: true });
 
     viewEl.addEventListener('touchmove', (e) => {
+      if (vBlocked) return;
       const vDx = e.touches[0].clientX - vStartX;
       const vDy = e.touches[0].clientY - vStartY;
 
