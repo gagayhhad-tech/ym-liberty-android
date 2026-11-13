@@ -216,6 +216,13 @@
               <span class="slider round"></span>
             </label>
           </div>
+          <div class="setting-item hidden" id="setting-hide-system-nav">
+            <span>Скрыть кнопки Android<br><small style="opacity: 0.55;">Свайп от нижнего края вернёт их на время</small></span>
+            <label class="switch">
+              <input type="checkbox" id="toggle-hide-system-nav">
+              <span class="slider round"></span>
+            </label>
+          </div>
           <div class="setting-item">
             <span>Цвет акцента</span>
             <div class="color-picker">
@@ -416,7 +423,7 @@
 
     <!-- Artist Modal -->
     <main id="view-artist" class="view">
-      <div style="position: sticky; top: 0; z-index: 10; display: flex; padding: 50px 15px 15px;">
+      <div style="position: sticky; top: 0; z-index: 10; display: flex; padding: max(50px, calc(var(--safe-top) + 16px)) 15px 15px;">
         <button class="icon-btn" id="btn-close-artist" style="background: rgba(0,0,0,0.5); border-radius: 50%;"><i class="bi bi-arrow-left"></i></button>
       </div>
       
@@ -439,7 +446,7 @@
     </main>
     <!-- View: Album (Отдельная страница альбома) -->
     <main id="view-album" class="view">
-      <div style="position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 45px 15px 15px; background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);">
+      <div style="position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: max(45px, calc(var(--safe-top) + 12px)) 15px 15px; background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);">
         <button class="icon-btn" id="btn-close-album" style="background: rgba(255,255,255,0.1); border-radius: 50%; width: 40px; height: 40px;"><i class="bi bi-arrow-left"></i></button>
         <span id="album-header-title" style="font-size: 15px; font-weight: 700; max-width: 60%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.2s;">Альбом</span>
         <div style="width: 40px;"></div>
@@ -464,7 +471,7 @@
 
     <!-- View: Playlist (Отдельная страница плейлиста) -->
     <main id="view-playlist" class="view">
-      <div style="position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 45px 15px 15px; background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);">
+      <div style="position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: max(45px, calc(var(--safe-top) + 12px)) 15px 15px; background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);">
         <button class="icon-btn" id="btn-close-playlist" style="background: rgba(255,255,255,0.1); border-radius: 50%; width: 40px; height: 40px;"><i class="bi bi-arrow-left"></i></button>
         <span id="playlist-header-title" style="font-size: 15px; font-weight: 700; max-width: 60%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.2s;">Плейлист</span>
         <div style="width: 40px;"></div>
